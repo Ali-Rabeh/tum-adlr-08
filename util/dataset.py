@@ -33,12 +33,13 @@ class CustomDataset(Dataset):
                         columns=['time_sec', 'ft_wrench_xforce_N', 'ft_wrench_yforce_N', 'ft_wrench_ztorque_Nm']
                         )
 
-        self.dataframe = pd.merge_asof(self.tip_pose_df, self.obj_pose_df, on='time_sec', direction='nearest')
-        self.dataframe = pd.merge_asof(self.dataframe, self.ft_wrench_df, on='time_sec', direction='nearest')
+        self.dataframe = pd.merge_asof(self.tip_pose_df, self.ft_wrench_df, on='time_sec', direction='nearest')
+        self.dataframe = pd.merge_asof(self.dataframe, self.obj_pose_df, on='time_sec', direction='nearest')
 
     def __len__(self):
         return len(self.dataframe)
 
     def __getitem__(self, idx): 
         # print(self.dataframe.iloc[idx,:])
-        return self.dataframe.iloc[idx,:].to_dict()
+        # return self.dataframe.iloc[idx,:].to_numpy(dtype=float), self.dataframe.iloc[idx,7:10].to_numpy(dtype=float)
+        return torch.tensor(self.dataframe.iloc[idx,:], dtype=torch.float32), torch.tensor(self.dataframe.iloc[idx,7:10], dtype=torch.float32)

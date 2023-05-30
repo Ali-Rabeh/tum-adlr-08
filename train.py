@@ -6,26 +6,42 @@ from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
 from models.forward_model import ForwardModel
-from util.dataset import NormalDataset, ShiftedDataset, assemble_datasets
+from models.observation_model import ObservationModel
+from models.differentiable_particle_filter import DifferentiableParticleFilter
+
+from util.data_file_paths import train_path_list, validation_path_list
+from util.dataset import SequenceDataset
+
+from run_filter import visualize_particles
 
 hparams = {
-    'batch_size': 16,
-    'learning_rate': 1e-4,
-    'epochs': 20,
-    'sequence_length': 2
+    'mode': 'shifted', 
+    'sequence_length': 2, 
+    'sampling_frequency': 50, 
+    'batch_size': 1, 
+
+    'num_particles': 500, 
+    'initial_covariance': torch.diag(torch.tensor([0.1, 0.1, 0.01])),
+
+    'epochs': 400,
+    'learning_rate': 1e-4
 }
 
-# standard train function from pytorch tutorials
-def train(dataloader, model, loss_fn, optimizer):
+def train_forward_model(dataloader, model, loss_fn, optimizer):
     size = len(dataloader.dataset)
+    device = ("cuda" if torch.cuda.is_available() else "cpu")
+
     model.train()
     batch_losses = []
     for batch, (X, y) in enumerate(dataloader):
-        X = X[:,7:10]
+        X, y = X.squeeze(), y.squeeze()
         X, y = X.to(device), y.to(device)
 
+        states = X[:,7:10]
+        control_inputs = X[:,4:7]
+
         # Compute prediction error
-        pred = model(X)
+        pred = model(states, control_inputs)
         loss = loss_fn(pred, y)
 
         # Backpropagation
@@ -35,24 +51,24 @@ def train(dataloader, model, loss_fn, optimizer):
 
         batch_losses.append(loss)
 
-        if batch % 10 == 0:
-            loss, current = loss.item(), (batch+1)*len(X)
-            print(f"Loss: {loss:>7f} [{current:>5d}/{size:>5d}]")
+        loss, current = loss.item(), (batch+1)
+        print(f"Loss: {loss:>7f} [{current:>5d}/{size:>5d}]")
 
     return torch.tensor(batch_losses)
 
-# standard test function from pytorch tutorials
-def test(dataloader, model, loss_fn):
+def validate_forward_model(dataloader, model, loss_fn):
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
-    model.eval()
+    device = ("cuda" if torch.cuda.is_available() else "cpu")
 
+    model.eval()
     test_loss = 0
     with torch.no_grad():
         for X, y in dataloader:
-            X = X[:,7:10]
+            X, y = X.squeeze(), y.squeeze()
+            states, control_inputs = X[:,7:10], X[:,4:7]
             X, y = X.to(device), y.to(device)
-            pred = model(X)
+            pred = model(states, control_inputs)
             test_loss += loss_fn(pred, y).item()
 
     test_loss /= num_batches 
@@ -60,46 +76,104 @@ def test(dataloader, model, loss_fn):
 
     return test_loss
 
-if __name__ == '__main__':
-    # build training dataloader
-    train_path_list = [os.path.abspath("../pushdata/plywood/butter/motion_surface=plywood_shape=butter_a=0_v=10_i=0.000_s=0.000_t=0.000.json"),
-                       os.path.abspath("../pushdata/plywood/butter/motion_surface=plywood_shape=butter_a=0_v=10_i=0.000_s=0.000_t=0.698.json")]
-    training_data = assemble_datasets(train_path_list, mode='shifted', sequence_length=hparams['sequence_length'])
-    train_dataloader = DataLoader(training_data, batch_size=hparams['batch_size'], shuffle=False, drop_last=True)
-    print(f"Length training dataloader: {len(train_dataloader)}")
+def train_end_to_end(dataloader, model, loss_fn, optimizer):
+    return NotImplementedError
 
-    # build validation dataloader
-    validation_path_list = [os.path.abspath("../pushdata/plywood/butter/motion_surface=plywood_shape=butter_a=0_v=10_i=0.000_s=0.000_t=0.349.json")]
-    validation_data = assemble_datasets(validation_path_list, mode='shifted', sequence_length=hparams['sequence_length'])
-    validation_dataloader = DataLoader(validation_data, batch_size=hparams['batch_size'], shuffle=False, drop_last=True)
-    print(f"Length validation dataloader: {len(validation_dataloader)}")
+def main(): 
+    # build up training dataset and dataloader
+    train_dataset = SequenceDataset(
+        train_path_list, 
+        mode=hparams['mode'], 
+        sequence_length=hparams['sequence_length'], 
+        sampling_frequency=hparams['sampling_frequency']
+        )
+    train_dataloader = DataLoader(train_dataset, batch_size=hparams['batch_size'], shuffle=False)
+
+    validation_dataset = SequenceDataset(
+        validation_path_list,
+        mode=hparams['mode'], 
+        sequence_length=hparams['sequence_length'],
+        sampling_frequency=hparams['sampling_frequency']
+    )
+    validation_dataloader = DataLoader(validation_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
     device = ("cuda" if torch.cuda.is_available() else "cpu")
 
-    # build the model
-    model = ForwardModel().to(device)
-    print(model)
+    # define DPF
+    dpf = DifferentiableParticleFilter(hparams, ForwardModel(), ObservationModel())
 
-    # prepare training
+    # model = dpf.forward_model
+    # model.to(device)
+
+    # epoch_losses, validation_losses = [], []
+    # for epoch in range(hparams['epochs']):
+    #     batch_losses = train_forward_model(train_dataloader, model, loss_fn=nn.MSELoss(), optimizer=torch.optim.Adam(model.parameters(), lr=hparams['learning_rate']))
+    #     epoch_losses.append(torch.mean(batch_losses))
+
+    #     val_loss = validate_forward_model(validation_dataloader, model, loss_fn=nn.MSELoss())
+    #     validation_losses.append(val_loss)
+
     loss_fn = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=hparams['learning_rate'])
+    optimizer = torch.optim.Adam(dpf.parameters(), lr=hparams['learning_rate'])
+    best_validation_loss = 1000.0
 
-    epochs = hparams['epochs']
-    train_epoch_losses, validation_epoch_losses = [], []
-    for t in range(epochs):
-        print(f"Epoch {t+1}\n---------------------------------------")
+    dpf.to(device)
+    epoch_losses = []
+    validation_losses = []
+    for epoch in range(hparams['epochs']): 
+        batch_losses = []
+        dpf.train() 
+        for batch, (X, y) in enumerate(train_dataloader):
+            X, y = X.squeeze(), y.squeeze()
+            X, y = X.to(device), y.to(device)
+            states, control_inputs, measurements = X[:,7:10], X[:,4:7], X[:,1:7]
 
-        train_batch_losses = train(train_dataloader, model, loss_fn, optimizer)
-        train_epoch_losses.append(torch.mean(train_batch_losses))
+            input_size = X.shape[0]
+            dpf.initialize(input_size, states, hparams['initial_covariance']) # only valid for one step predictions!
 
-        validation_loss = test(validation_dataloader, model, loss_fn)
-        validation_epoch_losses.append(validation_loss)
+            estimates = dpf.step(control_inputs, measurements)
+            loss = loss_fn(estimates, y)
 
-    print("Done!")
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
-    fig = plt.figure()
-    plt.plot(range(epochs), train_epoch_losses)
-    plt.plot(range(epochs), validation_epoch_losses)
-    plt.legend(["Train loss", "Validation loss"])
+            batch_losses.append(torch.mean(loss))
+
+            loss, current = loss.item(), (batch+1)
+            # print(f"Loss: {loss:>7f} [{current:>5d}/{len(train_dataloader):>5d}]")
+
+        epoch_losses.append(torch.mean(torch.tensor(batch_losses)))
+
+        dpf.eval()
+        test_loss = 0
+        with torch.no_grad():
+            for (X, y) in validation_dataloader:
+                X, y = X.squeeze(), y.squeeze()
+                states, control_inputs, measurements = X[:,7:10], X[:,4:7], X[:,1:7]
+                X, y = X.to(device), y.to(device)
+
+                dpf.initialize(states.shape[0], states, hparams['initial_covariance'])
+                pred = dpf.step(control_inputs, measurements)
+                test_loss += loss_fn(pred, y).item()
+
+        test_loss /= len(validation_dataloader) 
+        validation_losses.append(test_loss)
+        
+        if test_loss <= best_validation_loss:
+            best_dpf = dpf
+
+        print(f"Epoch {epoch+1} finished.")
+
+    fig, ax = plt.subplots(1, 1)
+    ax.plot(range(hparams['epochs']), epoch_losses, label='Train')
+    ax.plot(range(hparams['epochs']), validation_losses, label='Validation')
+    ax.legend()
+    ax.grid()
+    ax.set_title('Loss')
     plt.show()
 
+    torch.save(best_dpf, "models/saved_models/20230530_Test02.pth")
+
+if __name__ == '__main__':
+    main()

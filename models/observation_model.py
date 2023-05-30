@@ -14,7 +14,10 @@ class ObservationModel(nn.Module):
             nn.ReLU(),
             nn.Linear(18, 18), 
             nn.ReLU(),
-            nn.Linear(18, 1)
+            nn.Linear(18, 18),
+            nn.ReLU(),
+            nn.Linear(18, 1),
+            nn.Sigmoid()
         )
 
     def forward(self, particle_states, measurements):

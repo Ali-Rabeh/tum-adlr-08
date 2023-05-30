@@ -18,7 +18,9 @@ class ForwardModel(nn.Module):
 
         self.model = nn.Sequential(
             nn.Linear(6, 12),
-            nn.ReLU(),
+            nn.LeakyReLU(negative_slope=0.01),
+            nn.Linear(12, 12),
+            nn.LeakyReLU(negative_slope=0.01),
             nn.Linear(12, 3)
         )
 

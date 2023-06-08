@@ -22,13 +22,14 @@ hparams = {
 
     'num_particles': 500, 
     'initial_covariance': torch.diag(torch.tensor([0.1, 0.1, 0.01])),
-
-    'pretrain_epochs': 50, # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': 100,
-    'learning_rate': 1e-4,
+    'use_log_probs': True,
 
     'pretrain_forward_model': True,
-    'save_model': False
+    'save_model': False,
+
+    'pretrain_epochs': 50, # will only be used if 'pretrain_forward_model' is set to True
+    'epochs': 20,
+    'learning_rate': 1e-3,
 }
 
 def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer):
@@ -120,6 +121,7 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
 
     train_losses, validation_losses = [], []
     best_validation_loss = 1000.0
+    best_model = None
 
     for epoch in range(hparams['epochs']): 
         batch_losses = []
@@ -160,6 +162,8 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
                 model.initialize(states.shape[0], states, hparams['initial_covariance']) # only valid for one step predictions
                 pred = model.step(control_inputs, measurements)
                 test_loss += loss_fn(pred, y).item()
+
+                print(f"Validation: prediction = {pred} | ground truth = {y}")
 
         test_loss /= len(validation_dataloader) 
         validation_losses.append(test_loss)
@@ -205,7 +209,7 @@ def main():
     device = ("cuda" if torch.cuda.is_available() else "cpu")
 
     # define DPF
-    dpf = DifferentiableParticleFilter(hparams, ForwardModel(), ObservationModel())
+    dpf = DifferentiableParticleFilter(hparams, ForwardModel(), ObservationModel(use_log_probs=hparams['use_log_probs']))
 
     # set up loss function and optimizer
     loss_fn = nn.MSELoss()

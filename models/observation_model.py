@@ -3,11 +3,16 @@ import torch.nn as nn
 import numpy as np
 
 class ObservationModel(nn.Module):
-    def __init__(self):
+    def __init__(self, use_log_probs):
         """This will output weights for the particles.
         
         """
         super().__init__()
+
+        if use_log_probs:
+            last_layer = nn.Identity()
+        else:
+            last_layer = nn.Sigmoid()
 
         self.model = nn.Sequential(
             nn.Linear(9, 18), 
@@ -17,7 +22,7 @@ class ObservationModel(nn.Module):
             nn.Linear(18, 18),
             nn.ReLU(),
             nn.Linear(18, 1),
-            nn.Sigmoid()
+            last_layer
         )
 
     def forward(self, particle_states, measurements):

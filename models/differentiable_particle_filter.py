@@ -32,7 +32,11 @@ class DifferentiableParticleFilter(nn.Module):
         self.weights = torch.zeros(size=(batch_size, self.hparams["num_particles"], 1))
         for n in range(batch_size):
             self.particles[n,:,:] = initial_states[n,:] + torch.randn(self.hparams["num_particles"], 3) @ initial_covariance
-            self.weights[n,:] = 1/self.hparams["num_particles"] * torch.ones(size=(self.hparams["num_particles"],1))
+
+            if self.hparams['use_log_probs']: 
+                self.weights[n,:] = -torch.log(self.hparams['num_particles'] * torch.ones(size=(self.hparams["num_particles"],1)))
+            else:
+                self.weights[n,:] = 1/self.hparams["num_particles"] * torch.ones(size=(self.hparams["num_particles"],1))
 
         assert self.particles.shape == (batch_size, self.hparams["num_particles"], 3)
         assert self.weights.shape == (batch_size, self.hparams["num_particles"], 1)
@@ -56,13 +60,25 @@ class DifferentiableParticleFilter(nn.Module):
         return propagated_particles
 
     def update(self, state, measurement):
-        """ 
+        """ Passes the current measurements to the observation model, which returns their likelihoods given the particle states. 
+            The weights are then updated with these likelihoods.
+
+        Args: 
+            state (torch.tensor): 
+
+            measurement (torch.tensor):
+
+        Returns:
         
         """
         likelihoods = self.observation_model(state, measurement)
 
-        self.weights = self.weights * likelihoods
-        # self.weights = self.weights / torch.sum(self.weights)
+        if self.hparams['use_log_probs']: 
+            self.weights = self.weights + likelihoods
+            self.weights = self.weights - torch.logsumexp(self.weights, dim=1, keepdim=True)
+        else:
+            self.weights = self.weights * likelihoods
+            self.weights = self.weights / torch.sum(self.weights, dim=1, keepdim=True)
 
     def resample(self):
         """ 
@@ -78,7 +94,10 @@ class DifferentiableParticleFilter(nn.Module):
         estimates = torch.zeros(size=(num_input_points,3))
         for n in range(num_input_points):
             weights_transposed = torch.t(self.weights[n,:,:])
-            estimates[n,:] = torch.matmul(weights_transposed, self.particles[n,:,:]) / torch.sum(weights_transposed)
+            if self.hparams['use_log_probs']:
+                estimates[n,:] = torch.matmul(torch.exp(weights_transposed), self.particles[n,:,:])
+            else:
+                estimates[n,:] = torch.matmul(weights_transposed, self.particles[n,:,:])
 
         assert estimates.shape == (num_input_points, 3)
         return estimates

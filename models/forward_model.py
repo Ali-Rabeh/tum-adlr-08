@@ -27,7 +27,13 @@ class ForwardModel(nn.Module):
         self.model.apply(init_weights)
 
     def forward(self, particle_states, control_inputs):
-        """ Returns delta_x, that is, a prediction for the small increment from last time step to the next: x_{t+1} = x_{t} + delta_x """
+        """ Returns delta_x, that is, a prediction for the small increment from last time step to the next: x_{t+1} = x_{t} + delta_x 
+        
+        Args: 
+            particle_states (torch.tensor): dimensions = (batch_size, num_particles, state_dim)
+
+            control_inputs (torch.tensor): dimensions = (batch_size, control_dim)
+        """
 
         num_input_points = control_inputs.shape[0]
         num_particles = particle_states.shape[1]

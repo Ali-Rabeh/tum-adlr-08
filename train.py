@@ -16,7 +16,7 @@ from run_filter import visualize_particles
 
 hparams = {
     'mode': 'shifted', 
-    'sequence_length': 2, 
+    'shift_length': 1, 
     'sampling_frequency': 50, 
     'batch_size': 1, 
 
@@ -24,12 +24,14 @@ hparams = {
     'initial_covariance': torch.diag(torch.tensor([0.1, 0.1, 0.01])),
     'use_log_probs': True,
 
-    'pretrain_forward_model': True,
-    'save_model': False,
+    'pretrain_forward_model': False,
+    'save_model': True,
 
     'pretrain_epochs': 50, # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': 20,
-    'learning_rate': 1e-3,
+    'epochs': 100,
+    'learning_rate': 1e-4,
+
+    'sequence_length': 4
 }
 
 def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer):
@@ -63,7 +65,7 @@ def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer):
 
     return model, torch.tensor(batch_losses)
 
-def validate_forward_model(dataloader, model, loss_fn):
+def validate_forward_model_single_epoch(dataloader, model, loss_fn):
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
     device = ("cuda" if torch.cuda.is_available() else "cpu")
@@ -102,7 +104,7 @@ def pretrain_forward_model(train_dataloader, validation_dataloader, model, loss_
         model, batch_losses = pretrain_forward_model_single_epoch(train_dataloader, model, loss_fn=loss_fn, optimizer=optimizer)
         train_losses.append(torch.mean(batch_losses))
 
-        val_loss = validate_forward_model(validation_dataloader, model, loss_fn=loss_fn)
+        val_loss = validate_forward_model_single_epoch(validation_dataloader, model, loss_fn=loss_fn)
         validation_losses.append(val_loss)
 
         if val_loss < best_validation_loss:
@@ -133,21 +135,29 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
             X, y = X.to(device), y.to(device)
             states, control_inputs, measurements = X[:,7:10], X[:,4:7], X[:,1:7]
 
-            input_size = X.shape[0]
-            model.initialize(input_size, states, hparams['initial_covariance']) # only valid for one step predictions!
+            sequence_losses = []
+            for t in range(states.shape[0]):
+                current_state = torch.atleast_2d(states[t,:])
+                current_control = torch.atleast_2d(control_inputs[t,:])
+                current_measurement = torch.atleast_2d(measurements[t,:])
+                current_gt_state = torch.atleast_2d(y[t,:])
 
-            estimates = model.step(control_inputs, measurements)
-            loss = loss_fn(estimates, y)
+                # if we start a new sequence, we have to zero everything and reinitialize the model
+                if t % hparams['sequence_length'] == 0: 
+                    loss = torch.zeros([])
+                    optimizer.zero_grad()
+                    model.initialize(current_state.shape[0], current_state, hparams['initial_covariance'])
 
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
+                estimate = model.step(current_control, current_measurement)
+                loss += loss_fn(estimate, current_gt_state)
 
-            batch_losses.append(torch.mean(loss))
-
-            loss, current = loss.item(), (batch+1)
-            # print(f"Loss: {loss:>7f} [{current:>5d}/{len(train_dataloader):>5d}]")
-
+                # backpropagate the loss at the end of a sequence
+                if (t % hparams['sequence_length'] == hparams['sequence_length'] - 1) or (t == states.shape[0]-1):
+                    loss.backward()
+                    optimizer.step()
+                    sequence_losses.append(loss)
+                
+            batch_losses = torch.mean(torch.tensor(sequence_losses))
         train_losses.append(torch.mean(torch.tensor(batch_losses)))
 
         # validate the model
@@ -156,14 +166,22 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
         with torch.no_grad():
             for (X, y) in validation_dataloader:
                 X, y = X.squeeze(), y.squeeze()
-                states, control_inputs, measurements = X[:,7:10], X[:,4:7], X[:,1:7]
                 X, y = X.to(device), y.to(device)
+                states, control_inputs, measurements = X[:,7:10], X[:,4:7], X[:,1:7]
 
-                model.initialize(states.shape[0], states, hparams['initial_covariance']) # only valid for one step predictions
-                pred = model.step(control_inputs, measurements)
-                test_loss += loss_fn(pred, y).item()
+                for t in range(states.shape[0]): 
+                    current_state = torch.atleast_2d(states[t,:])
+                    current_control = torch.atleast_2d(control_inputs[t,:])
+                    current_measurement = torch.atleast_2d(measurements[t,:])
+                    current_gt_state = torch.atleast_2d(y[t,:])                    
 
-                print(f"Validation: prediction = {pred} | ground truth = {y}")
+                    # if we start a new sequence, we have to reinitialize the PF
+                    if t % hparams['sequence_length'] == 0:
+                        model.initialize(current_state.shape[0], current_state, hparams['initial_covariance'])
+
+                    estimate = model.step(current_control, current_measurement)
+                    test_loss += loss_fn(estimate, current_gt_state).item()
+                    # print(f"Validation: prediction = {estimate} | ground truth = {current_gt_state}")
 
         test_loss /= len(validation_dataloader) 
         validation_losses.append(test_loss)
@@ -192,7 +210,7 @@ def main():
     train_dataset = SequenceDataset(
         train_path_list, 
         mode=hparams['mode'], 
-        sequence_length=hparams['sequence_length'], 
+        shift_length=hparams['shift_length'], 
         sampling_frequency=hparams['sampling_frequency']
         )
     train_dataloader = DataLoader(train_dataset, batch_size=hparams['batch_size'], shuffle=False)
@@ -200,7 +218,7 @@ def main():
     validation_dataset = SequenceDataset(
         validation_path_list,
         mode=hparams['mode'], 
-        sequence_length=hparams['sequence_length'],
+        shift_length=hparams['shift_length'],
         sampling_frequency=hparams['sampling_frequency']
     )
     validation_dataloader = DataLoader(validation_dataset, batch_size=hparams['batch_size'], shuffle=False)
@@ -233,7 +251,7 @@ def main():
 
     # save the best model if desired
     if hparams['save_model']: 
-        torch.save(best_dpf, "models/saved_models/20230608_Model01.pth")
+        torch.save(best_dpf, "models/saved_models/20230609_Epochs100_SequenceLength4.pth")
 
 if __name__ == '__main__':
     main()

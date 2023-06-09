@@ -14,7 +14,7 @@ from util.dataset import SequenceDataset
 
 hparams = {
     'mode': 'shifted',
-    'sequence_length': 2, 
+    'shift_length': 1, 
     'sampling_frequency': 50, 
     'batch_size': 1, 
 
@@ -47,12 +47,12 @@ def main():
         test_path_list, 
         mode=hparams['mode'], 
         sampling_frequency = hparams["sampling_frequency"],
-        sequence_length=hparams["sequence_length"]
+        shift_length=hparams["shift_length"]
     )
     test_dataloader = DataLoader(test_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
     # 2. load the trained filter
-    dpf = torch.load("models/saved_models/20230530_Test.pth")
+    dpf = torch.load("models/saved_models/20230609_Epochs100_SequenceLength4.pth")
 
     # 3. for each sequence in the test dataset do: 
     for batch, (X, y) in enumerate(test_dataloader):

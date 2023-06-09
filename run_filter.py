@@ -19,7 +19,7 @@ hparams = {
     'batch_size': 1, 
 
     'num_particles': 500, 
-    'initial_covariance': torch.diag(torch.tensor([0.1, 0.1, 0.01]))
+    'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01]))
 }
 
 def visualize_particles(diff_particle_filter, filter_estimate, gt_pose):
@@ -52,7 +52,7 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
     # 2. load the trained filter
-    dpf = torch.load("models/saved_models/20230609_Epochs100_SequenceLength4.pth")
+    dpf = torch.load("models/saved_models/20230609_PretrainEpochs100_Epochs200_SequenceLength4.pth")
 
     # 3. for each sequence in the test dataset do: 
     for batch, (X, y) in enumerate(test_dataloader):

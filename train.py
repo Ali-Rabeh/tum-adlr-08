@@ -21,15 +21,15 @@ hparams = {
     'batch_size': 1, 
 
     'num_particles': 500, 
-    'initial_covariance': torch.diag(torch.tensor([0.1, 0.1, 0.01])),
+    'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01])),
     'use_log_probs': True,
 
-    'pretrain_forward_model': False,
+    'pretrain_forward_model': True,
     'save_model': True,
 
-    'pretrain_epochs': 50, # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': 100,
-    'learning_rate': 1e-4,
+    'pretrain_epochs': 100, # will only be used if 'pretrain_forward_model' is set to True
+    'epochs': 200,
+    'learning_rate': 5e-5,
 
     'sequence_length': 4
 }
@@ -45,23 +45,26 @@ def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer):
         X, y = X.to(device), y.to(device)
         states, control_inputs = X[:,7:10], X[:,4:7]
 
-        # get the states into the correct shape for the forward model --> this is basically a distribution with just one particle
-        states = torch.unsqueeze(states, dim=1)
+        sequence_losses = []
+        for t in range(states.shape[0]): 
+            current_state = torch.unsqueeze(torch.atleast_2d(states[t,:]), dim=1) # shape=(1,1,3)
+            current_control = torch.atleast_2d(control_inputs[t,:])
+            current_gt_state = torch.unsqueeze(torch.atleast_2d(y[t,:]), dim=1) # shape=(1,1,3)
 
-        # Compute prediction error
-        pred = model.forward(states, control_inputs)
-        pred = pred.squeeze()
-        loss = loss_fn(pred, y)
+            if t % hparams['sequence_length'] == 0:
+                loss = torch.zeros([]) 
+                optimizer.zero_grad()
+                pred = current_state
 
-        # Backpropagation
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+            pred = model.forward(pred, current_control)
+            loss += loss_fn(pred, current_gt_state)
 
-        batch_losses.append(loss)
+            if (t % hparams['sequence_length'] == hparams['sequence_length'] - 1) or (t == states.shape[0]-1): 
+                loss.backward()
+                optimizer.step()
+                sequence_losses.append(loss)        
 
-        loss, current = loss.item(), (batch+1)
-        # print(f"Loss: {loss:>7f} [{current:>5d}/{size:>5d}]")
+        batch_losses.append(torch.mean(torch.tensor(sequence_losses)))
 
     return model, torch.tensor(batch_losses)
 
@@ -76,15 +79,19 @@ def validate_forward_model_single_epoch(dataloader, model, loss_fn):
         for X, y in dataloader:
             X, y = X.squeeze().to(device), y.squeeze().to(device)
             states, control_inputs = X[:,7:10], X[:,4:7]
-            states = torch.unsqueeze(states, dim=1)
 
-            pred = model.forward(states, control_inputs)
-            pred = pred.squeeze()
-            test_loss += loss_fn(pred, y).item()
+            for t in range(states.shape[0]): 
+                current_state = torch.unsqueeze(torch.atleast_2d(states[t,:]), dim=1) # shape=(1,1,3)
+                current_control = torch.atleast_2d(control_inputs[t,:])
+                current_gt_state = torch.unsqueeze(torch.atleast_2d(y[t,:]), dim=1) # shape=(1,1,3)
+
+                if t % hparams['sequence_length'] == 0: 
+                    pred = current_state
+
+                pred = model.forward(pred, current_control)
+                test_loss += loss_fn(pred, current_gt_state).item()
 
     test_loss /= num_batches 
-    # print(f"Validation loss: {test_loss:>8f} \n")
-
     return test_loss
 
 def pretrain_forward_model(train_dataloader, validation_dataloader, model, loss_fn, optimizer): 
@@ -157,7 +164,7 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
                     optimizer.step()
                     sequence_losses.append(loss)
                 
-            batch_losses = torch.mean(torch.tensor(sequence_losses))
+            batch_losses.append(torch.mean(torch.tensor(sequence_losses)))
         train_losses.append(torch.mean(torch.tensor(batch_losses)))
 
         # validate the model
@@ -251,7 +258,7 @@ def main():
 
     # save the best model if desired
     if hparams['save_model']: 
-        torch.save(best_dpf, "models/saved_models/20230609_Epochs100_SequenceLength4.pth")
+        torch.save(best_dpf, "models/saved_models/20230609_PretrainEpochs100_Epochs200_SequenceLength4.pth")
 
 if __name__ == '__main__':
     main()

@@ -66,13 +66,13 @@ def plot_object_and_tip_pose(sequence_data):
     return time_vector, fig, axes
 
 # Test for the single source sequence dataset
-sequence_length = 2
+shift_length = 1
 sampling_frequency = 50
-batch_size = 16
+batch_size = 1
 
-train_sequences = assemble_datasets(train_path_list, mode="shifted", sampling_frequency=sampling_frequency, sequence_length=sequence_length)
-validation_sequences = assemble_datasets(validation_path_list, mode="shifted", sampling_frequency=sampling_frequency, sequence_length=sequence_length)
-test_sequences = assemble_datasets(test_path_list, mode="shifted", sampling_frequency=sampling_frequency, sequence_length=sequence_length)
+train_sequences = assemble_datasets(train_path_list, mode="shifted", sampling_frequency=sampling_frequency, shift_length=shift_length)
+validation_sequences = assemble_datasets(validation_path_list, mode="shifted", sampling_frequency=sampling_frequency, shift_length=shift_length)
+test_sequences = assemble_datasets(test_path_list, mode="shifted", sampling_frequency=sampling_frequency, shift_length=shift_length)
 
 #######################
 # Check the train set # 
@@ -125,28 +125,29 @@ test_sequences = assemble_datasets(test_path_list, mode="shifted", sampling_freq
 ######################
 # Check the test set #
 ######################
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[0])
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[1])
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[2])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[0])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[1])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[2])
 
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[3])
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[4])
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[5])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[3])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[4])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[5])
 
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[6])
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[7])
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[8])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[6])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[7])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[8])
 
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[9])
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[10])
-time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[11])
-plt.show()
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[9])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[10])
+# time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[11])
+# plt.show()
 
 
 
-# dataloader_sequences_single_source = DataLoader(sequences, batch_size=batch_size, shuffle=False)
-# X_batch, y_batch = next(iter(dataloader_sequences_single_source))
-# print(X_batch)
-# print(y_batch)
-# print(type(X_batch))
-# print(type(y_batch))
+dataloader_sequences_single_source = DataLoader(train_sequences, batch_size=batch_size, shuffle=False)
+input_states, control_inputs, observations, target_states = next(iter(dataloader_sequences_single_source))
+print(input_states)
+print(control_inputs)
+print(observations)
+print(target_states)
+print(len(dataloader_sequences_single_source))

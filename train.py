@@ -25,10 +25,10 @@ hparams = {
     'use_log_probs': True,
 
     'pretrain_forward_model': True,
-    'save_model': True,
+    'save_model': False,
 
-    'pretrain_epochs': 100, # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': 200,
+    'pretrain_epochs': 10, # will only be used if 'pretrain_forward_model' is set to True
+    'epochs': 10,
     'learning_rate': 5e-5,
 
     'sequence_length': 4
@@ -40,16 +40,14 @@ def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer):
 
     model.train()
     batch_losses = []
-    for batch, (X, y) in enumerate(dataloader):
-        X, y = X.squeeze(), y.squeeze()
-        X, y = X.to(device), y.to(device)
-        states, control_inputs = X[:,7:10], X[:,4:7]
+    for batch, (input_states, control_inputs, observations, target_states) in enumerate(dataloader):
+        input_states, control_inputs, observations, target_states = input_states.to(device), control_inputs.to(device), observations.to(device), target_states.to(device)
 
         sequence_losses = []
-        for t in range(states.shape[0]): 
-            current_state = torch.unsqueeze(torch.atleast_2d(states[t,:]), dim=1) # shape=(1,1,3)
-            current_control = torch.atleast_2d(control_inputs[t,:])
-            current_gt_state = torch.unsqueeze(torch.atleast_2d(y[t,:]), dim=1) # shape=(1,1,3)
+        for t in range(input_states.shape[1]): 
+            current_state = input_states[:,t,:].unsqueeze(dim=1)
+            current_control = control_inputs[:,t,:]
+            current_gt_state = target_states[:,t,:].unsqueeze(dim=1)
 
             if t % hparams['sequence_length'] == 0:
                 loss = torch.zeros([]) 
@@ -59,7 +57,7 @@ def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer):
             pred = model.forward(pred, current_control)
             loss += loss_fn(pred, current_gt_state)
 
-            if (t % hparams['sequence_length'] == hparams['sequence_length'] - 1) or (t == states.shape[0]-1): 
+            if (t % hparams['sequence_length'] == hparams['sequence_length'] - 1) or (t == input_states.shape[1]-1): 
                 loss.backward()
                 optimizer.step()
                 sequence_losses.append(loss)        
@@ -76,14 +74,13 @@ def validate_forward_model_single_epoch(dataloader, model, loss_fn):
     model.eval()
     test_loss = 0
     with torch.no_grad():
-        for X, y in dataloader:
-            X, y = X.squeeze().to(device), y.squeeze().to(device)
-            states, control_inputs = X[:,7:10], X[:,4:7]
+        for input_states, control_inputs, observations, target_states in dataloader:
+            input_states, control_inputs, observations, target_states = input_states.to(device), control_inputs.to(device), observations.to(device), target_states.to(device)
 
-            for t in range(states.shape[0]): 
-                current_state = torch.unsqueeze(torch.atleast_2d(states[t,:]), dim=1) # shape=(1,1,3)
-                current_control = torch.atleast_2d(control_inputs[t,:])
-                current_gt_state = torch.unsqueeze(torch.atleast_2d(y[t,:]), dim=1) # shape=(1,1,3)
+            for t in range(input_states.shape[1]): 
+                current_state = input_states[:,t,:].unsqueeze(dim=1)
+                current_control = control_inputs[:,t,:]
+                current_gt_state = target_states[:,t,:].unsqueeze(dim=1)
 
                 if t % hparams['sequence_length'] == 0: 
                     pred = current_state
@@ -137,17 +134,15 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
         model.train() 
 
         # train for one epoch
-        for batch, (X, y) in enumerate(train_dataloader):
-            X, y = X.squeeze(), y.squeeze()
-            X, y = X.to(device), y.to(device)
-            states, control_inputs, measurements = X[:,7:10], X[:,4:7], X[:,1:7]
+        for batch, (input_states, control_inputs, observations, target_states) in enumerate(train_dataloader):
+            input_states, control_inputs, observations, target_states = input_states.to(device), control_inputs.to(device), observations.to(device), target_states.to(device)
 
             sequence_losses = []
-            for t in range(states.shape[0]):
-                current_state = torch.atleast_2d(states[t,:])
-                current_control = torch.atleast_2d(control_inputs[t,:])
-                current_measurement = torch.atleast_2d(measurements[t,:])
-                current_gt_state = torch.atleast_2d(y[t,:])
+            for t in range(input_states.shape[1]):
+                current_state = input_states[:,t,:].unsqueeze(dim=1)
+                current_control = control_inputs[:,t,:]
+                current_measurement = observations[:,t,:]
+                current_gt_state = target_states[:,t,:]
 
                 # if we start a new sequence, we have to zero everything and reinitialize the model
                 if t % hparams['sequence_length'] == 0: 
@@ -159,7 +154,7 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
                 loss += loss_fn(estimate, current_gt_state)
 
                 # backpropagate the loss at the end of a sequence
-                if (t % hparams['sequence_length'] == hparams['sequence_length'] - 1) or (t == states.shape[0]-1):
+                if (t % hparams['sequence_length'] == hparams['sequence_length'] - 1) or (t == input_states.shape[1]-1):
                     loss.backward()
                     optimizer.step()
                     sequence_losses.append(loss)
@@ -171,16 +166,14 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
         model.eval()
         test_loss = 0
         with torch.no_grad():
-            for (X, y) in validation_dataloader:
-                X, y = X.squeeze(), y.squeeze()
-                X, y = X.to(device), y.to(device)
-                states, control_inputs, measurements = X[:,7:10], X[:,4:7], X[:,1:7]
+            for (input_states, control_inputs, observations, target_states) in validation_dataloader:
+                input_states, control_inputs, observations, target_states = input_states.to(device), control_inputs.to(device), observations.to(device), target_states.to(device)
 
-                for t in range(states.shape[0]): 
-                    current_state = torch.atleast_2d(states[t,:])
-                    current_control = torch.atleast_2d(control_inputs[t,:])
-                    current_measurement = torch.atleast_2d(measurements[t,:])
-                    current_gt_state = torch.atleast_2d(y[t,:])                    
+                for t in range(input_states.shape[1]): 
+                    current_state = input_states[:,t,:].unsqueeze(dim=1)
+                    current_control = control_inputs[:,t,:]
+                    current_measurement = observations[:,t,:]
+                    current_gt_state = target_states[:,t,:]                 
 
                     # if we start a new sequence, we have to reinitialize the PF
                     if t % hparams['sequence_length'] == 0:

@@ -137,6 +137,7 @@ class ShiftedDataset(Dataset):
         self.dataframe.loc[:, 'obj_pose_ycenter_m'] = self.dataframe.loc[:, 'obj_pose_ycenter_m'] - self.dataframe.loc[0, 'obj_pose_ycenter_m']
         self.dataframe.loc[:, 'obj_pose_theta_rad'] = self.dataframe.loc[:, 'obj_pose_theta_rad'] - self.dataframe.loc[0, 'obj_pose_theta_rad']
 
+        # resample the data to target sampling rate
         if sampling_rate != -1:
             base_frequency = 250.0
             target_frequency = sampling_rate
@@ -146,6 +147,11 @@ class ShiftedDataset(Dataset):
             self.dataframe = self.dataframe.iloc[target_indices,:].reset_index()
             self.dataframe = self.dataframe.drop(columns='index')
 
+        # calculate the deltas of the object pose
+        self.dataframe['delta_obj_pose_xcenter_m'] = self.dataframe['obj_pose_xcenter_m'].shift(+1, fill_value=0) - self.dataframe['obj_pose_xcenter_m']
+        self.dataframe['delta_obj_pose_ycenter_m'] = self.dataframe['obj_pose_ycenter_m'].shift(+1, fill_value=0) - self.dataframe['obj_pose_ycenter_m']
+        self.dataframe['delta_obj_pose_theta_rad'] = self.dataframe['obj_pose_theta_rad'].shift(+1, fill_value=0) - self.dataframe['obj_pose_theta_rad']
+
     def __len__(self):
         return len(self.dataframe) - (self.shift_length)
 
@@ -154,9 +160,22 @@ class ShiftedDataset(Dataset):
         input_index = index
         output_index = index+(self.shift_length)
 
-        X = torch.tensor(self.dataframe.iloc[input_index,:], dtype=torch.float32)
-        y = torch.tensor(self.dataframe.iloc[output_index,7:10], dtype=torch.float32)
-        return X, y 
+        # X = torch.tensor(self.dataframe.iloc[input_index,:], dtype=torch.float32)
+        # y = torch.tensor(self.dataframe.iloc[output_index,7:10], dtype=torch.float32)
+
+        input_states = torch.tensor([self.dataframe.loc[input_index, 'obj_pose_xcenter_m'],
+                                     self.dataframe.loc[input_index, 'obj_pose_ycenter_m'], 
+                                     self.dataframe.loc[input_index, 'obj_pose_theta_rad']])
+        control_inputs = torch.tensor([self.dataframe.loc[input_index, 'delta_obj_pose_xcenter_m'], 
+                                       self.dataframe.loc[input_index, 'delta_obj_pose_ycenter_m'], 
+                                       self.dataframe.loc[input_index, 'delta_obj_pose_theta_rad']])
+        observations = torch.tensor([self.dataframe.loc[input_index, 'ft_wrench_xforce_N'], 
+                                     self.dataframe.loc[input_index, 'ft_wrench_yforce_N'], 
+                                     self.dataframe.loc[input_index, 'ft_wrench_ztorque_Nm']])
+        target_states = torch.tensor([self.dataframe.loc[output_index, 'obj_pose_xcenter_m'],
+                                      self.dataframe.loc[output_index, 'obj_pose_ycenter_m'], 
+                                      self.dataframe.loc[output_index, 'obj_pose_theta_rad']])          
+        return input_states, control_inputs, observations, target_states
 
 class SequenceDataset(Dataset): 
     def __init__(self, path_list, mode, shift_length=1, sampling_frequency=-1):
@@ -177,10 +196,23 @@ class SequenceDataset(Dataset):
         return len(self.batch_indices) - 1
 
     def __getitem__(self, index):
-        X = torch.tensor(self.data.datasets[index].dataframe.values, dtype=torch.float32)
-        y = torch.tensor(self.data.datasets[index].dataframe.iloc[:,7:10].shift(-self.shift_length).values, dtype=torch.float32)
+        # X = torch.tensor(self.data.datasets[index].dataframe.values, dtype=torch.float32)
+        # y = torch.tensor(self.data.datasets[index].dataframe.iloc[:,7:10].shift(-self.shift_length).values, dtype=torch.float32)
 
-        mask = ~torch.any(y.isnan(),dim=1)
-        X, y = X[mask], y[mask]
+        # mask = ~torch.any(y.isnan(),dim=1)
+        # X, y = X[mask], y[mask]
 
-        return X, y
+        input_states = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'obj_pose_xcenter_m'],
+                                     self.data.datasets[index].dataframe.loc[:, 'obj_pose_ycenter_m'], 
+                                     self.data.datasets[index].dataframe.loc[:, 'obj_pose_theta_rad']], dtype=torch.float32).t()
+        control_inputs = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'delta_obj_pose_xcenter_m'], 
+                                       self.data.datasets[index].dataframe.loc[:, 'delta_obj_pose_ycenter_m'], 
+                                       self.data.datasets[index].dataframe.loc[:, 'delta_obj_pose_theta_rad']], dtype=torch.float32).t()
+        observations = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'ft_wrench_xforce_N'], 
+                                     self.data.datasets[index].dataframe.loc[:, 'ft_wrench_yforce_N'], 
+                                     self.data.datasets[index].dataframe.loc[:, 'ft_wrench_ztorque_Nm']], dtype=torch.float32).t()
+        target_states = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'obj_pose_xcenter_m'],
+                                      self.data.datasets[index].dataframe.loc[:, 'obj_pose_ycenter_m'], 
+                                      self.data.datasets[index].dataframe.loc[:, 'obj_pose_theta_rad']], dtype=torch.float32).t()
+
+        return input_states, control_inputs, observations, target_states

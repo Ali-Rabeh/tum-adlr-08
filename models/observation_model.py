@@ -15,7 +15,7 @@ class ObservationModel(nn.Module):
             last_layer = nn.Sigmoid()
 
         self.model = nn.Sequential(
-            nn.Linear(9, 18), 
+            nn.Linear(6, 18), 
             nn.ReLU(),
             nn.Linear(18, 18), 
             nn.ReLU(),

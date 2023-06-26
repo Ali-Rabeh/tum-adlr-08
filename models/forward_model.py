@@ -34,7 +34,6 @@ class ForwardModel(nn.Module):
 
             control_inputs (torch.tensor): dimensions = (batch_size, control_dim)
         """
-
         num_input_points = control_inputs.shape[0]
         num_particles = particle_states.shape[1]
 
@@ -45,6 +44,9 @@ class ForwardModel(nn.Module):
         for n in range(num_input_points):
             control_inputs_reshaped[n,:,:] = control_inputs[n,:].repeat(num_particles,1)
         assert control_inputs_reshaped.shape == (num_input_points, num_particles, control_dim)
+
+        # print(f"Particle states shape: {particle_states.shape}")
+        # print(f"Control inputs reshaped shape: {control_inputs_reshaped.shape}")
 
         network_inputs = torch.concat((particle_states, control_inputs_reshaped), dim=2)
         assert network_inputs.shape == (num_input_points, num_particles, state_dim+control_dim)

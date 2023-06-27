@@ -2,6 +2,8 @@ import os
 import torch 
 from torch.utils.data import DataLoader
 
+import numpy as np
+import cv2
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
@@ -19,14 +21,22 @@ hparams = {
     'batch_size': 1, 
 
     'num_particles': 500, 
-    'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01]))
+    'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01])), 
+
+    'record_animations': True
 }
 
 def visualize_particles(diff_particle_filter, filter_estimate, gt_pose):
-    fig, ax = plt.subplots(1, 1)
+    """ 
+    
+    """
+    fig = plt.figure(figsize=(8, 6), dpi=80) # creates a 640 by 480 figure
+    ax = fig.add_subplot(1, 1, 1, autoscale_on=True)
+
     ax.scatter(diff_particle_filter.particles[:,:,0].detach().numpy(), diff_particle_filter.particles[:,:,1].detach().numpy(), marker='+', label='Particles')
     ax.scatter(filter_estimate[:,0].detach().numpy(), filter_estimate[:,1].detach().numpy(), color='r', marker='+', label='Current estimate')
     ax.scatter(gt_pose[0], gt_pose[1], color='g', marker='o', label='Ground truth')
+
     ax.set_title("Current particles")
     ax.legend()
     ax.grid()
@@ -40,6 +50,17 @@ def visualize_weights(diff_particle_filter):
     ax.set_title("Current weights")
     ax.grid()
     return fig, ax
+
+def convertFigureToImage(fig):
+    """ Converts a plt.figure object to a cv2 image. Used for the animations.
+    
+    fig (plt.figure):
+
+    """
+    fig.canvas.draw()
+    image = np.array(fig.canvas.get_renderer()._renderer)
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) # convert from RGB to cv2's default BGR
+    return image
 
 def main(): 
     # 1. assemble the test dataset
@@ -59,19 +80,23 @@ def main():
         # sequence_length = X.shape[1]
         sequence_length = 10
 
-        # states = X[:,7:10] # object states
-        # control_inputs = X[:,4:7] # force / torque
-        # measurements = X[:,1:7] # tip pose + force/torque
-        print(input_states.shape)
-
         dpf_estimates = torch.zeros(size=(sequence_length, 3))
 
         # 3.1 initialize the filter
         initial_input_size = 1
         initial_state = input_states[:,0,:].unsqueeze(dim=1)
+
         dpf.initialize(1, initial_state, hparams['initial_covariance'])
         dpf_estimates[0,:] = dpf.estimate()
         print(f"Initial estimate: {dpf_estimates[0,:]}")
+
+        # start the animation recording
+        if hparams['record_animations']:
+            video_path = "experiments/animations/sequence" + str(batch) + ".avi"
+            video_writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'MJPG'), fps=1, frameSize=(640, 480))
+
+            fig, _ = visualize_particles(dpf, dpf_estimates[0,:].unsqueeze(dim=0), target_states[:,0,:].squeeze())
+            video_writer.write(convertFigureToImage(fig))
 
         # 3.2 step the filter through the sequence
         for n in range(1, sequence_length):
@@ -82,9 +107,15 @@ def main():
             print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
             dpf_estimates[n,:] = estimate
 
-            # _, _ = visualize_particles(dpf, estimate, y[n,:])
-            # _, _ = visualize_weights(dpf)
-            # plt.show()
+            if hparams['record_animations']:
+                fig, _ = visualize_particles(dpf, estimate, target_states[:,n,:].squeeze())
+                video_writer.write(convertFigureToImage(fig))
+
+        # destroy everything needed for the animations
+        if hparams['record_animations']:
+            video_writer.release()
+            cv2.destroyAllWindows()
+            plt.close('all')
 
         dpf_estimates = dpf_estimates.detach().numpy()
 

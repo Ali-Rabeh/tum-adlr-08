@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+import numpy as np
 import matplotlib.pyplot as plt
 
 from models.forward_model import ForwardModel
@@ -24,15 +25,31 @@ hparams = {
     'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01])),
     'use_log_probs': True,
 
-    'pretrain_forward_model': True,
-    'save_model': True,
+    'pretrain_forward_model': False,
+    'save_model': False,
 
-    'pretrain_epochs': [20, 20, 20], # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': [50, 50, 50],
-    'learning_rate': 1e-4,
+    'pretrain_epochs': [10], # will only be used if 'pretrain_forward_model' is set to True
+    'epochs': [50],
+    'learning_rate': 1e-5,
 
-    'sequence_lengths': [1, 2, 4]
+    'sequence_lengths': [4]
 }
+
+def boxplus(state, delta, scaling=1.0):
+    """ Implements the boxplus operation for the SE(2) manifold. The implementation follows Lennart's manitorch code. 
+
+    Args: 
+        state (torch.tensor): A 1x1x3 tensor representing the state [x, y, theta]
+        delta (torch.tensor): A 1x1x3 tensor representing the step towards the next state: [delta_x, delta_y, delta_theta]
+
+    Returns:
+        new_state (torch.tensor): A 1x1x3 tensor representing the new state: [new_x, new_y, new_theta]. Basically, new_state = state + delta,
+                                  and we make sure that new_theta is between -pi and pi.
+    """
+    delta = scaling * delta
+    new_state = state + delta
+    new_state[:,:,2] = ((new_state[:,:,2] + np.pi) % (2*np.pi)) - np.pi
+    return new_state
 
 def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, sequence_length):
     size = len(dataloader.dataset)
@@ -59,8 +76,8 @@ def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, s
                 pred_state = current_state
 
             pred_delta = model.forward(pred_state, current_control)
-            # print(f"Pred. delta: {pred_delta}")
-            pred_state = pred_state + pred_delta
+            # print(f"Pred. state: {pred_state.shape} | Pred. delta: {pred_delta.shape}")
+            pred_state = boxplus(pred_state, pred_delta)
             loss += loss_fn(pred_state, current_gt_state)
 
             if (t % sequence_length == sequence_length - 1) or (t == input_states.shape[1]-1): 
@@ -92,7 +109,7 @@ def validate_forward_model_single_epoch(dataloader, model, loss_fn, sequence_len
                     pred_state = current_state
 
                 pred_delta = model.forward(pred_state, current_control)
-                pred_state = pred_state + pred_delta
+                pred_state = boxplus(pred_state, pred_delta)
                 test_loss += loss_fn(pred_state, current_gt_state).item()
 
     test_loss /= num_batches 

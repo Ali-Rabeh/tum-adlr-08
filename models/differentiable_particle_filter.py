@@ -24,8 +24,26 @@ class DifferentiableParticleFilter(nn.Module):
 
         self.current_best_estimate = torch.zeros(size=(1,3))
 
-    def initialize(self, batch_size, initial_states, initial_covariance):
+    def boxplus(self, state, delta, scaling=1.0):
+        """ Implements the boxplus operation for the SE(2) manifold. The implementation follows Lennart's manitorch code. 
+
+        Args: 
+            state (torch.tensor): A 1xnum_particlesx3 tensor representing the state [x, y, theta]
+            delta (torch.tensor): A 1xnum_particlesx3 tensor representing the step towards the next state: [delta_x, delta_y, delta_theta]
+
+        Returns:
+            new_state (torch.tensor): A 1xnum_particlesx3 tensor representing the new state: [new_x, new_y, new_theta]. 
+                                      Basically, new_state = state + delta, and we make sure that new_theta is between -pi and pi.
         """
+        # print(f"State shape: {state.shape} | Delta shape: {delta.shape}")
+
+        delta = scaling * delta
+        new_state = state + delta
+        new_state[:,:,2] = ((new_state[:,:,2] + np.pi) % (2*np.pi)) - np.pi
+        return new_state
+
+    def initialize(self, batch_size, initial_states, initial_covariance):
+        """ Initializes the particle filter.
 
         """
         self.particles = torch.zeros(size=(batch_size, self.hparams["num_particles"], 3))
@@ -54,7 +72,7 @@ class DifferentiableParticleFilter(nn.Module):
         
         """
         delta_particles = self.forward_model.forward(states, control_inputs)
-        propagated_particles = self.particles + delta_particles
+        propagated_particles = self.boxplus(self.particles, delta_particles)
         self.particles = propagated_particles
         assert self.particles.shape == (control_inputs.shape[0], self.hparams["num_particles"], 3)
         return propagated_particles

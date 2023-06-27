@@ -25,11 +25,11 @@ hparams = {
     'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01])),
     'use_log_probs': True,
 
-    'pretrain_forward_model': False,
+    'pretrain_forward_model': True,
     'save_model': False,
 
     'pretrain_epochs': [10], # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': [50],
+    'epochs': [10],
     'learning_rate': 1e-5,
 
     'sequence_lengths': [4]
@@ -51,6 +51,38 @@ def boxplus(state, delta, scaling=1.0):
     new_state[:,:,2] = ((new_state[:,:,2] + np.pi) % (2*np.pi)) - np.pi
     return new_state
 
+def radianToContinuous(states):
+    """ Maps the state [x, y, theta_rad] to the state [x, y, cos(theta_rad), sin(theta_rad)]. 
+    
+    Args: 
+        states (torch.tensor): A tensor with size (batch_size, num_particles, 3) representing the particles states.
+
+    Returns: 
+        continuous_states (torch.tensor): A tensor with size (batch_size, num_particles, 4) representing a continuous version of the 
+                                            particle states.
+    """
+    continuous_states = torch.zeros(size=(states.shape[0], states.shape[1], states.shape[2]+1))
+    # print(continuous_states.shape)
+    continuous_states[:,:,0:1] = states[:,:,0:1]
+    continuous_states[:,:,2] = torch.cos(states[:,:,2])
+    continuous_states[:,:,3] = torch.sin(states[:,:,2])
+    return continuous_states
+
+def continuousToRadian(states):
+    """ Maps states [x, y, cos(theta_rad), sin(theta_rad) to states [x, y, theta_rad]. 
+    
+    Args: 
+        states (torch.tensor):
+
+    Returns:
+        discontinuous_states (torch.tensor):
+    """
+
+    discontinuous_states = torch.zeros(size=(states.shape[0], states.shape[1], states.shape[2]-1))
+    discontinuous_states[:,:,0:1] = states[:,:,0:1]
+    discontinuous_states[:,:,2] = torch.atan2(states[:,:,3], states[:,:,2])
+    return discontinuous_states
+
 def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, sequence_length):
     size = len(dataloader.dataset)
     device = ("cuda" if torch.cuda.is_available() else "cpu")
@@ -63,7 +95,7 @@ def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, s
         sequence_losses = []
         for t in range(input_states.shape[1]): 
             current_state = input_states[:,t,:].unsqueeze(dim=1)
-            current_control = control_inputs[:,t,:]
+            current_control = control_inputs[:,t,:].unsqueeze(dim=1)
             current_gt_state = target_states[:,t,:].unsqueeze(dim=1)
 
             # print(f"Current state: {current_state}")
@@ -75,8 +107,15 @@ def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, s
                 optimizer.zero_grad()
                 pred_state = current_state
 
+            pred_state = radianToContinuous(pred_state)
+            current_control = radianToContinuous(current_control)
+
             pred_delta = model.forward(pred_state, current_control)
             # print(f"Pred. state: {pred_state.shape} | Pred. delta: {pred_delta.shape}")
+
+            pred_delta = continuousToRadian(pred_delta)
+            pred_state = continuousToRadian(pred_state)
+
             pred_state = boxplus(pred_state, pred_delta)
             loss += loss_fn(pred_state, current_gt_state)
 
@@ -102,13 +141,19 @@ def validate_forward_model_single_epoch(dataloader, model, loss_fn, sequence_len
 
             for t in range(input_states.shape[1]): 
                 current_state = input_states[:,t,:].unsqueeze(dim=1)
-                current_control = control_inputs[:,t,:]
+                current_control = control_inputs[:,t,:].unsqueeze(dim=1)
                 current_gt_state = target_states[:,t,:].unsqueeze(dim=1)
 
                 if t % sequence_length == 0: 
                     pred_state = current_state
 
+                pred_state = radianToContinuous(pred_state)
+                current_control = radianToContinuous(current_control)
                 pred_delta = model.forward(pred_state, current_control)
+
+                pred_delta = continuousToRadian(pred_delta)
+                pred_state = continuousToRadian(pred_state)
+
                 pred_state = boxplus(pred_state, pred_delta)
                 test_loss += loss_fn(pred_state, current_gt_state).item()
 
@@ -158,7 +203,7 @@ def train_end_to_end_single_epoch(dataloader, model, loss_fn, optimizer, sequenc
         sequence_losses = []
         for t in range(input_states.shape[1]):
             current_state = input_states[:,t,:].unsqueeze(dim=1)
-            current_control = control_inputs[:,t,:]
+            current_control = control_inputs[:,t,:].unsqueeze(dim=1)
             current_measurement = observations[:,t,:]
             current_gt_state = target_states[:,t,:]
 
@@ -194,7 +239,7 @@ def validate_end_to_end_single_epoch(dataloader, model, loss_fn, sequence_length
 
             for t in range(input_states.shape[1]): 
                 current_state = input_states[:,t,:].unsqueeze(dim=1)
-                current_control = control_inputs[:,t,:]
+                current_control = control_inputs[:,t,:].unsqueeze(dim=1)
                 current_measurement = observations[:,t,:]
                 current_gt_state = target_states[:,t,:]                 
 

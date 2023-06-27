@@ -100,9 +100,10 @@ def main():
 
         # 3.2 step the filter through the sequence
         for n in range(1, sequence_length):
-            current_control_inputs = control_inputs[:,n,:]
+            current_control_inputs = control_inputs[:,n,:].unsqueeze(dim=1)
             current_measurements = observations[:,n,:]
 
+            print(current_control_inputs.shape)
             estimate = dpf.step(current_control_inputs, current_measurements)
             print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
             dpf_estimates[n,:] = estimate

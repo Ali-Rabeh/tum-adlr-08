@@ -15,7 +15,7 @@ class ObservationModel(nn.Module):
             last_layer = nn.Sigmoid()
 
         self.model = nn.Sequential(
-            nn.Linear(6, 18), 
+            nn.Linear(7, 18), 
             nn.ReLU(),
             nn.Linear(18, 18), 
             nn.ReLU(),
@@ -28,6 +28,10 @@ class ObservationModel(nn.Module):
     def forward(self, particle_states, measurements):
         """Calculates the likelihoods of current measurements given the particle states. 
 
+        Args: 
+            particle_states (torch.tensor): A tensor with size (batch_size, num_particles, 4) representing the particle states 
+                                            in the continuous representation.
+            measurements (torch.tensor): The current measured forces/torques.
         """
         num_input_points = measurements.shape[0]
         num_particles = particle_states.shape[1]

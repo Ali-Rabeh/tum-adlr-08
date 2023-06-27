@@ -113,12 +113,25 @@ class ShiftedDataset(Dataset):
                         index=range(len(help_df.tip_pose[0])),
                         columns=['time_sec', 'tip_pose_xpos_m', 'tip_pose_ypos_m', 'tip_pose_theta_pos_rad']
                         )
+        pos_mask = self.tip_pose_df['tip_pose_theta_pos_rad'] > np.pi
+        neg_mask = self.tip_pose_df['tip_pose_theta_pos_rad'] < -np.pi
+        if pos_mask.any():
+            print(f"Tip poses: Found angles >pi.")
+        if neg_mask.any():
+            print(f"Tip poses: Found angles <pi.")
+
 
         self.obj_pose_df = pd.DataFrame(
                         help_df.object_pose[0],
                         index = range(len(help_df.object_pose[0])),
                         columns=['time_sec', 'obj_pose_xcenter_m', 'obj_pose_ycenter_m', 'obj_pose_theta_rad']
                         )
+        pos_mask = self.obj_pose_df['obj_pose_theta_rad'] > np.pi
+        neg_mask = self.obj_pose_df['obj_pose_theta_rad'] < -np.pi
+        if pos_mask.any():
+            print(f"Object poses: Found angles >pi.")
+        if neg_mask.any():
+            print(f"Object poses: Found angles <pi.")
 
         self.ft_wrench_df = pd.DataFrame(
                         help_df.ft_wrench[0],
@@ -211,8 +224,9 @@ class SequenceDataset(Dataset):
         observations = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'ft_wrench_xforce_N'], 
                                      self.data.datasets[index].dataframe.loc[:, 'ft_wrench_yforce_N'], 
                                      self.data.datasets[index].dataframe.loc[:, 'ft_wrench_ztorque_Nm']], dtype=torch.float32).t()
-        target_states = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'obj_pose_xcenter_m'],
-                                      self.data.datasets[index].dataframe.loc[:, 'obj_pose_ycenter_m'], 
-                                      self.data.datasets[index].dataframe.loc[:, 'obj_pose_theta_rad']], dtype=torch.float32).t()
+        target_states = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'obj_pose_xcenter_m'].shift(-self.shift_length, fill_value=0),
+                                      self.data.datasets[index].dataframe.loc[:, 'obj_pose_ycenter_m'].shift(-self.shift_length, fill_value=0), 
+                                      self.data.datasets[index].dataframe.loc[:, 'obj_pose_theta_rad'].shift(-self.shift_length, fill_value=0)], 
+                                      dtype=torch.float32).t()
 
         return input_states, control_inputs, observations, target_states

@@ -52,34 +52,34 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
     # 2. load the trained filter
-    dpf = torch.load("models/saved_models/20230609_PretrainEpochs100_Epochs200_SequenceLength4.pth")
+    dpf = torch.load("models/saved_models/20230627_PretrainEpochs_20_3_Epochs_50_3_SequenceLengths_1_2_4.pth")
 
     # 3. for each sequence in the test dataset do: 
-    for batch, (X, y) in enumerate(test_dataloader):
-        X, y = X.squeeze(), y.squeeze()
-        # sequence_length = X.shape[0]
+    for batch, (input_states, control_inputs, observations, target_states) in enumerate(test_dataloader):
+        # sequence_length = X.shape[1]
         sequence_length = 10
 
-        states = X[:,7:10] # object states
-        control_inputs = X[:,4:7] # force / torque
-        measurements = X[:,1:7] # tip pose + force/torque
+        # states = X[:,7:10] # object states
+        # control_inputs = X[:,4:7] # force / torque
+        # measurements = X[:,1:7] # tip pose + force/torque
+        print(input_states.shape)
 
         dpf_estimates = torch.zeros(size=(sequence_length, 3))
 
         # 3.1 initialize the filter
         initial_input_size = 1
-        initial_state = torch.unsqueeze(states[0,:], dim=0)
+        initial_state = input_states[:,0,:].unsqueeze(dim=1)
         dpf.initialize(1, initial_state, hparams['initial_covariance'])
         dpf_estimates[0,:] = dpf.estimate()
         print(f"Initial estimate: {dpf_estimates[0,:]}")
 
         # 3.2 step the filter through the sequence
         for n in range(1, sequence_length):
-            current_control_inputs = torch.unsqueeze(control_inputs[n,:], dim=0)
-            current_measurements = torch.unsqueeze(measurements[n,:], dim=0)
+            current_control_inputs = control_inputs[:,n,:]
+            current_measurements = observations[:,n,:]
 
             estimate = dpf.step(current_control_inputs, current_measurements)
-            print(f"Step: {n} | Ground truth: {y[n,:]} | Filter estimate: {estimate}")
+            print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
             dpf_estimates[n,:] = estimate
 
             # _, _ = visualize_particles(dpf, estimate, y[n,:])
@@ -97,7 +97,7 @@ def main():
         ax3 = plt.subplot(gs[1,1])
         ax4 = plt.subplot(gs[1,2])
 
-        ax1.scatter(y[:10,0], y[:10,1], label="Ground Truth")
+        ax1.scatter(target_states[:,:10,0], target_states[:,:10,1], label="Ground Truth")
         ax1.scatter(dpf_estimates[:10,0], dpf_estimates[:10,1], marker='+', label='Filter Estimate')
         ax1.axis('equal')
         ax1.set_title("Position")
@@ -106,21 +106,21 @@ def main():
         ax1.legend()
         ax1.grid()
 
-        ax2.plot(range(sequence_length), y[:10,0])
+        ax2.plot(range(sequence_length), target_states[:,:10,0].squeeze())
         ax2.plot(range(sequence_length), dpf_estimates[:10,0])
         ax2.set_title("X-Position")
         ax2.set_xlabel('Steps')
         ax2.set_ylabel('x_pos (m)')
         ax2.grid()
 
-        ax3.plot(range(sequence_length), y[:10,1])
+        ax3.plot(range(sequence_length), target_states[:,:10,1].squeeze())
         ax3.plot(range(sequence_length), dpf_estimates[:10,1])
         ax3.set_title("Y-Position")
         ax3.set_xlabel('Steps')
         ax3.set_ylabel('y_pos (m)')
         ax3.grid()
 
-        ax4.plot(range(sequence_length), y[:10,2])
+        ax4.plot(range(sequence_length), target_states[:,:10,2].squeeze())
         ax4.plot(range(sequence_length), dpf_estimates[:10,2])
         ax4.set_title("Orientation")
         ax4.set_xlabel('Steps')

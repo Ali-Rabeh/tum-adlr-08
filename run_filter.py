@@ -23,6 +23,10 @@ hparams = {
     'num_particles': 500, 
     'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01])), 
 
+    'use_log_probs': True,
+    'use_resampling': True,
+    'resampling_soft_alpha': 0.05,
+
     'record_animations': True
 }
 
@@ -73,7 +77,8 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
     # 2. load the trained filter
-    dpf = torch.load("models/saved_models/20230627_PretrainEpochs_20_3_Epochs_50_3_SequenceLengths_1_2_4.pth")
+    dpf = torch.load("models/saved_models/20230629_JustCheckingIfEverythingWorks01.pth")
+    print(dpf)
 
     # 3. for each sequence in the test dataset do: 
     for batch, (input_states, control_inputs, observations, target_states) in enumerate(test_dataloader):
@@ -103,9 +108,9 @@ def main():
             current_control_inputs = control_inputs[:,n,:].unsqueeze(dim=1)
             current_measurements = observations[:,n,:]
 
-            print(current_control_inputs.shape)
+            # print(current_control_inputs.shape)
             estimate = dpf.step(current_control_inputs, current_measurements)
-            print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
+            # print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
             dpf_estimates[n,:] = estimate
 
             if hparams['record_animations']:

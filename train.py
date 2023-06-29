@@ -10,6 +10,7 @@ from models.forward_model import ForwardModel
 from models.observation_model import ObservationModel
 from models.differentiable_particle_filter import DifferentiableParticleFilter
 
+from util.manifold_helpers import boxplus, radianToContinuous, continuousToRadian
 from util.data_file_paths import train_path_list, validation_path_list
 from util.dataset import SequenceDataset
 
@@ -24,64 +25,19 @@ hparams = {
     'num_particles': 500, 
     'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01])),
     'use_log_probs': True,
+    'use_resampling': True,
+    'resampling_soft_alpha': 0.05,
 
     'pretrain_forward_model': True,
-    'save_model': False,
+    'save_model': True,
+    'model_name': "20230629_JustCheckingIfEverythingWorks01.pth",
 
-    'pretrain_epochs': [10], # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': [10],
+    'pretrain_epochs': [10, 10, 10, 10], # will only be used if 'pretrain_forward_model' is set to True
+    'epochs': [20, 20, 40, 40],
     'learning_rate': 1e-5,
 
-    'sequence_lengths': [4]
+    'sequence_lengths': [1, 2, 4, 8]
 }
-
-def boxplus(state, delta, scaling=1.0):
-    """ Implements the boxplus operation for the SE(2) manifold. The implementation follows Lennart's manitorch code. 
-
-    Args: 
-        state (torch.tensor): A 1x1x3 tensor representing the state [x, y, theta]
-        delta (torch.tensor): A 1x1x3 tensor representing the step towards the next state: [delta_x, delta_y, delta_theta]
-
-    Returns:
-        new_state (torch.tensor): A 1x1x3 tensor representing the new state: [new_x, new_y, new_theta]. Basically, new_state = state + delta,
-                                  and we make sure that new_theta is between -pi and pi.
-    """
-    delta = scaling * delta
-    new_state = state + delta
-    new_state[:,:,2] = ((new_state[:,:,2] + np.pi) % (2*np.pi)) - np.pi
-    return new_state
-
-def radianToContinuous(states):
-    """ Maps the state [x, y, theta_rad] to the state [x, y, cos(theta_rad), sin(theta_rad)]. 
-    
-    Args: 
-        states (torch.tensor): A tensor with size (batch_size, num_particles, 3) representing the particles states.
-
-    Returns: 
-        continuous_states (torch.tensor): A tensor with size (batch_size, num_particles, 4) representing a continuous version of the 
-                                            particle states.
-    """
-    continuous_states = torch.zeros(size=(states.shape[0], states.shape[1], states.shape[2]+1))
-    # print(continuous_states.shape)
-    continuous_states[:,:,0:1] = states[:,:,0:1]
-    continuous_states[:,:,2] = torch.cos(states[:,:,2])
-    continuous_states[:,:,3] = torch.sin(states[:,:,2])
-    return continuous_states
-
-def continuousToRadian(states):
-    """ Maps states [x, y, cos(theta_rad), sin(theta_rad) to states [x, y, theta_rad]. 
-    
-    Args: 
-        states (torch.tensor):
-
-    Returns:
-        discontinuous_states (torch.tensor):
-    """
-
-    discontinuous_states = torch.zeros(size=(states.shape[0], states.shape[1], states.shape[2]-1))
-    discontinuous_states[:,:,0:1] = states[:,:,0:1]
-    discontinuous_states[:,:,2] = torch.atan2(states[:,:,3], states[:,:,2])
-    return discontinuous_states
 
 def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, sequence_length):
     size = len(dataloader.dataset)
@@ -150,9 +106,11 @@ def validate_forward_model_single_epoch(dataloader, model, loss_fn, sequence_len
                 pred_state = radianToContinuous(pred_state)
                 current_control = radianToContinuous(current_control)
                 pred_delta = model.forward(pred_state, current_control)
+                # print(f"Pred delta directly from model: {pred_delta}")
 
                 pred_delta = continuousToRadian(pred_delta)
                 pred_state = continuousToRadian(pred_state)
+                # print(f"Pred delta: {pred_delta} | Pred state: {pred_state}")
 
                 pred_state = boxplus(pred_state, pred_delta)
                 test_loss += loss_fn(pred_state, current_gt_state).item()
@@ -262,7 +220,7 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
     model.to(device)
 
     train_losses, validation_losses = [], []
-    best_validation_loss = 1000.0
+    best_validation_loss = 100000.0
     best_model = None
 
     for sequence_index in range(len(hparams['sequence_lengths'])):
@@ -277,7 +235,7 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
             if val_loss <= best_validation_loss:
                 best_model = model
 
-            print(f"End-to-end training | Sequence length = {sequence_length} | Epoch {epoch+1} finished.")
+            print(f"End-to-end training | Sequence length = {sequence_length} | Epoch {epoch+1} finished with validation loss: {val_loss}")
 
     return best_model, train_losses, validation_losses
 
@@ -338,8 +296,9 @@ def main():
     plt.show()
 
     # save the best model if desired
+    print(best_dpf.parameters())
     if hparams['save_model']: 
-        torch.save(best_dpf, "models/saved_models/20230627_PretrainEpochs_20_3_Epochs_50_3_SequenceLengths_1_2_4.pth")
+        torch.save(best_dpf, "models/saved_models/"+hparams['model_name'])
 
 if __name__ == '__main__':
     main()

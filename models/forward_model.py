@@ -59,7 +59,7 @@ class ForwardModel(nn.Module):
 
         # sample prediction
         predicted_mean = out
-        predicted_covariance = 0.1*torch.eye(4)
+        predicted_covariance = 0.01*torch.eye(4)
 
         # Reparameterization trick apparently --> How does this work?
         # we need to use rsample instead of sample here to enable backpropagation (rsample: sampling using reparameterization trick)

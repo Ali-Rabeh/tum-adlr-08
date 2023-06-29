@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from util.manifold_helpers import boxplus, radianToContinuous, continuousToRadian, weightedAngularMean
+
 def init_weights(module):
     """ 
     
@@ -23,66 +25,6 @@ class DifferentiableParticleFilter(nn.Module):
         self.weights = torch.zeros(size=[])
 
         self.current_best_estimate = torch.zeros(size=(1,3))
-
-    def boxplus(self, state, delta, scaling=1.0):
-        """ Implements the boxplus operation for the SE(2) manifold. The implementation follows Lennart's manitorch code. 
-
-        Args: 
-            state (torch.tensor): A 1xnum_particlesx3 tensor representing the state [x, y, theta]
-            delta (torch.tensor): A 1xnum_particlesx3 tensor representing the step towards the next state: [delta_x, delta_y, delta_theta]
-
-        Returns:
-            new_state (torch.tensor): A 1xnum_particlesx3 tensor representing the new state: [new_x, new_y, new_theta]. 
-                                      Basically, new_state = state + delta, and we make sure that new_theta is between -pi and pi.
-        """
-        # print(f"State shape: {state.shape} | Delta shape: {delta.shape}")
-
-        delta = scaling * delta
-        new_state = state + delta
-        new_state[:,:,2] = ((new_state[:,:,2] + np.pi) % (2*np.pi)) - np.pi
-        return new_state
-
-    def radianToContinuous(self, states):
-        """ Maps the state [x, y, theta_rad] to the state [x, y, cos(theta_rad), sin(theta_rad)]. 
-        
-        Args: 
-            states (torch.tensor): A tensor with size (batch_size, num_particles, 3) representing the particles states.
-
-        Returns: 
-            continuous_states (torch.tensor): A tensor with size (batch_size, num_particles, 4) representing a continuous version of the 
-                                              particle states.
-        """
-        continuous_states = torch.zeros(size=(states.shape[0], states.shape[1], states.shape[2]+1))
-        # print(continuous_states.shape)
-        continuous_states[:,:,0:1] = states[:,:,0:1]
-        continuous_states[:,:,2] = torch.cos(states[:,:,2])
-        continuous_states[:,:,3] = torch.sin(states[:,:,2])
-        return continuous_states
-
-    def continuousToRadian(self, states):
-        """ Maps states [x, y, cos(theta_rad), sin(theta_rad) to states [x, y, theta_rad]. 
-        
-        Args: 
-            states (torch.tensor):
-
-        Returns:
-            discontinuous_states (torch.tensor):
-        """
-
-        discontinuous_states = torch.zeros(size=(states.shape[0], states.shape[1], states.shape[2]-1))
-        discontinuous_states[:,:,0:1] = states[:,:,0:1]
-        discontinuous_states[:,:,2] = torch.atan2(states[:,:,3], states[:,:,2])
-        return discontinuous_states
-
-    def weightedAngularMean(self, angles, weights):
-        """Calculates the weighted angular mean. 
-
-        Args: 
-
-        Returns: 
-
-        """
-        return NotImplementedError
 
     def initialize(self, batch_size, initial_states, initial_covariance):
         """ Initializes the particle filter.
@@ -112,14 +54,14 @@ class DifferentiableParticleFilter(nn.Module):
             self.particles (torch.tensor): Particles moved by one step according to the forward model.
         """
 
-        states = self.radianToContinuous(states)
-        control_inputs = self.radianToContinuous(control_inputs)
+        states = radianToContinuous(states)
+        control_inputs = radianToContinuous(control_inputs)
         # print(f"States shape: {states.shape} | Control inputs shape: {control_inputs.shape}")
 
         delta_particles = self.forward_model.forward(states, control_inputs)
-        delta_particles = self.continuousToRadian(delta_particles)
+        delta_particles = continuousToRadian(delta_particles)
 
-        propagated_particles = self.boxplus(self.particles, delta_particles)
+        propagated_particles = boxplus(self.particles, delta_particles)
         self.particles = propagated_particles
         assert self.particles.shape == (control_inputs.shape[0], self.hparams["num_particles"], 3)
 
@@ -133,7 +75,7 @@ class DifferentiableParticleFilter(nn.Module):
             states (torch.tensor): 
             measurement (torch.tensor):
         """
-        states = self.radianToContinuous(states)
+        states = radianToContinuous(states)
         likelihoods = self.observation_model(states, measurement)
 
         if self.hparams['use_log_probs']: 
@@ -143,11 +85,39 @@ class DifferentiableParticleFilter(nn.Module):
             self.weights = self.weights * likelihoods
             self.weights = self.weights / torch.sum(self.weights, dim=1, keepdim=True)
 
-    def resample(self):
-        """ 
+    def resample(self, soft_resample_alpha):
+        """ Resample particles, currently only works for weights in log-space. 
+
+        Args: 
+            soft_resample_alpha (float):
         
         """
-        return NotImplementedError
+        soft_resample_alpha = torch.tensor(soft_resample_alpha, dtype=torch.float32)
+        batch_size, num_particles, state_dim = self.particles.shape
+
+        # calculate uniform weights
+        uniform_log_weights = self.weights.new_full(
+            (batch_size, num_particles, 1), float(-torch.log(torch.tensor(num_particles, dtype=torch.float32)))
+        )
+
+        if soft_resample_alpha < 1.0: # actual soft resampling
+            sample_logits = torch.logsumexp(
+                torch.stack([self.weights + torch.log(soft_resample_alpha), uniform_log_weights + torch.log(1.0 - soft_resample_alpha)], dim=0),
+                dim=0
+            )
+            self.weights = self.weights - sample_logits
+        else: # regular resampling, stops gradients
+            sample_logits = self.weights
+            self.weights = uniform_log_weights
+
+        # draw indices according to the weights
+        sample_logits = sample_logits.squeeze()
+        distribution = torch.distributions.Categorical(logits=sample_logits)
+        indices = distribution.sample(sample_shape=(num_particles,))
+
+        # draw corresponding particles
+        self.particles = self.particles[:, indices, :]
+        assert self.particles.shape == (batch_size, num_particles, state_dim) 
 
     def estimate(self): 
         """ Calculates the filter's state estimate as a weighted mean of its particles.
@@ -158,9 +128,12 @@ class DifferentiableParticleFilter(nn.Module):
         for n in range(num_input_points):
             weights_transposed = torch.t(self.weights[n,:,:])
             if self.hparams['use_log_probs']:
-                estimates[n,:] = torch.matmul(torch.exp(weights_transposed), self.particles[n,:,:])
+                # print(torch.exp(weights_transposed))
+                estimates[n,0:2] = torch.matmul(torch.exp(weights_transposed), self.particles[n,:,0:2])
+                estimates[n,2] = weightedAngularMean(self.particles[n,:,2], torch.exp(weights_transposed))
             else:
-                estimates[n,:] = torch.matmul(weights_transposed, self.particles[n,:,:])
+                estimates[n,0:2] = torch.matmul(weights_transposed, self.particles[n,:,0:2])
+                estimates[n,2] = weightedAngularMean(self.particles[n,:,2], weights_transposed)
 
         assert estimates.shape == (num_input_points, 3)
         return estimates
@@ -178,8 +151,12 @@ class DifferentiableParticleFilter(nn.Module):
         """
         _ = self.forward(self.particles, control_input)
         self.update(self.particles, measurement)
-        # self.resample()
         estimate = self.estimate()
+
+        # currently, the resampling step is only written for weights in log-space
+        if self.hparams['use_resampling'] and self.hparams['use_log_probs']: 
+            self.resample(self.hparams['resampling_soft_alpha'])
+
         return estimate
 
 

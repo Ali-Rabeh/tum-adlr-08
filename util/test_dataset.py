@@ -142,8 +142,6 @@ test_sequences = assemble_datasets(test_path_list, mode="shifted", sampling_freq
 # time_vector, _, _ = plot_sequence_variables(test_sequences.datasets[11])
 # plt.show()
 
-
-
 dataloader_sequences_single_source = DataLoader(train_sequences, batch_size=batch_size, shuffle=False)
 input_states, control_inputs, observations, target_states = next(iter(dataloader_sequences_single_source))
 print(input_states)

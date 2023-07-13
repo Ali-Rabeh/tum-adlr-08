@@ -12,6 +12,7 @@ from models.differentiable_particle_filter import DifferentiableParticleFilter
 
 from util.manifold_helpers import boxplus, radianToContinuous, continuousToRadian
 from util.data_file_paths import train_path_list, validation_path_list
+from util.data_file_paths import *
 from util.dataset import SequenceDataset
 
 from run_filter import visualize_particles
@@ -22,21 +23,21 @@ hparams = {
     'sampling_frequency': 50, 
     'batch_size': 1, 
 
-    'num_particles': 500, 
+    'num_particles': 100, 
     'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01])),
     'use_log_probs': True,
     'use_resampling': True,
     'resampling_soft_alpha': 0.05,
 
     'pretrain_forward_model': True,
-    'save_model': True,
-    'model_name': "20230629_JustCheckingIfEverythingWorks01.pth",
+    'save_model': False,
+    'model_name': "20230629_JustCheckingIfEverythingWorks02.pth",
 
-    'pretrain_epochs': [10, 10, 10, 10], # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': [20, 20, 40, 40],
+    'pretrain_epochs': [5, 5, 5], # will only be used if 'pretrain_forward_model' is set to True
+    'epochs': [5, 5, 5],
     'learning_rate': 1e-5,
 
-    'sequence_lengths': [1, 2, 4, 8]
+    'sequence_lengths': [1, 2, 4]
 }
 
 def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, sequence_length):
@@ -143,7 +144,7 @@ def pretrain_forward_model(train_dataloader, validation_dataloader, model, loss_
             if val_loss < best_validation_loss:
                 best_model = model
 
-            print(f"Pretraining | Sequence length = {sequence_length} | Epoch {epoch+1} finished.")
+            print(f"Pretraining | Sequence length = {sequence_length} | Epoch {epoch+1} finished with validation loss: {val_loss}")
 
     return best_model, train_losses, validation_losses
 
@@ -207,7 +208,7 @@ def validate_end_to_end_single_epoch(dataloader, model, loss_fn, sequence_length
 
                 estimate = model.step(current_control, current_measurement)
                 val_loss += loss_fn(estimate, current_gt_state).item()
-                # print(f"Validation: input state: {current_state} | prediction = {estimate} | ground truth = {current_gt_state}")
+                print(f"Validation: input state: {current_state} | prediction = {estimate} | ground truth = {current_gt_state}")
 
     val_loss /= len(dataloader)
     return val_loss
@@ -257,7 +258,9 @@ def main():
         train_path_list, 
         mode=hparams['mode'], 
         shift_length=hparams['shift_length'], 
-        sampling_frequency=hparams['sampling_frequency']
+        sampling_frequency=hparams['sampling_frequency'],
+        dataset_min=train_min,
+        dataset_max=train_max
         )
     train_dataloader = DataLoader(train_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
@@ -265,7 +268,9 @@ def main():
         validation_path_list,
         mode=hparams['mode'], 
         shift_length=hparams['shift_length'],
-        sampling_frequency=hparams['sampling_frequency']
+        sampling_frequency=hparams['sampling_frequency'],
+        dataset_min=validation_min,
+        dataset_max=validation_max
     )
     validation_dataloader = DataLoader(validation_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
@@ -285,7 +290,7 @@ def main():
         best_forward_model, train_losses, validation_losses = pretrain_forward_model(train_dataloader,validation_dataloader, dpf.forward_model, loss_fn, optimizer)
 
         dpf.forward_model = best_forward_model
-        dpf.forward_model.requires_grad_(False) # freeze weights of the forward model if it has been pretrained
+        # dpf.forward_model.requires_grad_(False) # freeze weights of the forward model if it has been pretrained
 
         fig_pretrain, _ = plot_losses(train_losses, validation_losses, "Losses pretraining")
         plt.show()

@@ -11,7 +11,7 @@ from models.forward_model import ForwardModel
 from models.observation_model import ObservationModel
 from models.differentiable_particle_filter import DifferentiableParticleFilter
 
-from util.data_file_paths import test_path_list
+from util.data_file_paths import test_path_list, test_mean, test_std
 from util.dataset import SequenceDataset
 
 hparams = {
@@ -30,14 +30,14 @@ hparams = {
     'record_animations': True
 }
 
-def visualize_particles(diff_particle_filter, filter_estimate, gt_pose):
+def visualize_particles(particles, filter_estimate, gt_pose):
     """ 
     
     """
     fig = plt.figure(figsize=(8, 6), dpi=80) # creates a 640 by 480 figure
     ax = fig.add_subplot(1, 1, 1, autoscale_on=True)
 
-    ax.scatter(diff_particle_filter.particles[:,:,0].detach().numpy(), diff_particle_filter.particles[:,:,1].detach().numpy(), marker='+', label='Particles')
+    ax.scatter(particles[:,:,0].detach().numpy(), particles[:,:,1].detach().numpy(), marker='+', label='Particles')
     ax.scatter(filter_estimate[:,0].detach().numpy(), filter_estimate[:,1].detach().numpy(), color='r', marker='+', label='Current estimate')
     ax.scatter(gt_pose[0], gt_pose[1], color='g', marker='o', label='Ground truth')
 
@@ -66,19 +66,27 @@ def convertFigureToImage(fig):
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) # convert from RGB to cv2's default BGR
     return image
 
+def unnormalize(x, mean, std):
+    """ Unnormalizes x, which is assumed to be a tensor. """
+    out = std * x + mean 
+    assert out.shape == x.shape
+    return out
+
 def main(): 
     # 1. assemble the test dataset
     test_dataset = SequenceDataset(
         test_path_list, 
         mode=hparams['mode'], 
         sampling_frequency = hparams["sampling_frequency"],
-        shift_length=hparams["shift_length"]
+        shift_length=hparams["shift_length"],
+        dataset_mean=test_mean,
+        dataset_std=test_std
     )
     test_dataloader = DataLoader(test_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
     # 2. load the trained filter
-    dpf = torch.load("models/saved_models/20230629_JustCheckingIfEverythingWorks01.pth")
-    print(dpf)
+    dpf = torch.load("models/saved_models/20230629_JustCheckingIfEverythingWorks02.pth")
+    # print(dpf)
 
     # 3. for each sequence in the test dataset do: 
     for batch, (input_states, control_inputs, observations, target_states) in enumerate(test_dataloader):
@@ -100,7 +108,14 @@ def main():
             video_path = "experiments/animations/sequence" + str(batch) + ".avi"
             video_writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'MJPG'), fps=1, frameSize=(640, 480))
 
-            fig, _ = visualize_particles(dpf, dpf_estimates[0,:].unsqueeze(dim=0), target_states[:,0,:].squeeze())
+            # fig, _ = visualize_particles(dpf, dpf_estimates[0,:].unsqueeze(dim=0), target_states[:,0,:].squeeze())
+
+            fig, _ = visualize_particles(
+                unnormalize(dpf.particles, mean=test_mean[:,9:12].unsqueeze(dim=0), std=test_std[:,9:12].unsqueeze(dim=0)), 
+                unnormalize(dpf_estimates[0,:].unsqueeze(dim=0), mean=test_mean[:,9:12], std=test_std[:,9:12]), 
+                unnormalize(target_states[:,0,:].squeeze(), mean=test_mean[:,9:12].squeeze(), std=test_std[:,9:12].squeeze())
+            )
+
             video_writer.write(convertFigureToImage(fig))
 
         # 3.2 step the filter through the sequence
@@ -110,11 +125,18 @@ def main():
 
             # print(current_control_inputs.shape)
             estimate = dpf.step(current_control_inputs, current_measurements)
-            # print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
+            print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
             dpf_estimates[n,:] = estimate
 
             if hparams['record_animations']:
-                fig, _ = visualize_particles(dpf, estimate, target_states[:,n,:].squeeze())
+                # fig, _ = visualize_particles(dpf, estimate, target_states[:,n,:].squeeze())
+
+                fig, _ = visualize_particles(
+                    unnormalize(dpf.particles, mean=test_mean[:,9:12].unsqueeze(dim=0), std=test_std[:,9:12].unsqueeze(dim=0)), 
+                    unnormalize(estimate, mean=test_mean[:,9:12], std=test_std[:,9:12]), 
+                    unnormalize(target_states[:,n,:].squeeze(), mean=test_mean[:,9:12].squeeze(), std=test_std[:,9:12].squeeze())
+                )
+
                 video_writer.write(convertFigureToImage(fig))
 
         # destroy everything needed for the animations
@@ -124,6 +146,10 @@ def main():
             plt.close('all')
 
         dpf_estimates = dpf_estimates.detach().numpy()
+
+        # unnormalize for better plotting
+        # dpf_estimates = unnormalize(dpf_estimates, mean=test_mean[:,9:12], std=test_std[:,9:12])
+        # target_states = unnormalize(target_states, mean=test_mean[:,9:12], std=test_std[:,9:12])
 
         # 3.3 visualize the estimated state against the ground truth
         gs = gridspec.GridSpec(2, 3, height_ratios=[1, 1])

@@ -1,3 +1,7 @@
+"""
+
+"""
+
 import torch
 from torch.utils.data import Dataset, ConcatDataset
 
@@ -161,9 +165,13 @@ class ShiftedDataset(Dataset):
             self.dataframe = self.dataframe.drop(columns='index')
 
         # calculate the deltas of the object pose
-        self.dataframe['delta_obj_pose_xcenter_m'] = self.dataframe['obj_pose_xcenter_m'].shift(+1, fill_value=0) - self.dataframe['obj_pose_xcenter_m']
-        self.dataframe['delta_obj_pose_ycenter_m'] = self.dataframe['obj_pose_ycenter_m'].shift(+1, fill_value=0) - self.dataframe['obj_pose_ycenter_m']
-        self.dataframe['delta_obj_pose_theta_rad'] = self.dataframe['obj_pose_theta_rad'].shift(+1, fill_value=0) - self.dataframe['obj_pose_theta_rad']
+        self.dataframe['delta_obj_pose_xcenter_m'] = self.dataframe['obj_pose_xcenter_m'].shift(+1) - self.dataframe['obj_pose_xcenter_m']
+        self.dataframe['delta_obj_pose_ycenter_m'] = self.dataframe['obj_pose_ycenter_m'].shift(+1) - self.dataframe['obj_pose_ycenter_m']
+        self.dataframe['delta_obj_pose_theta_rad'] = self.dataframe['obj_pose_theta_rad'].shift(+1) - self.dataframe['obj_pose_theta_rad']
+
+        # filter out any rows with NaNs that have been produced by the shifting
+        self.dataframe.dropna(axis=0, how='any', inplace=True)
+        # print(self.dataframe.head())
 
     def __len__(self):
         return len(self.dataframe) - (self.shift_length)
@@ -191,7 +199,7 @@ class ShiftedDataset(Dataset):
         return input_states, control_inputs, observations, target_states
 
 class SequenceDataset(Dataset): 
-    def __init__(self, path_list, mode, shift_length=1, sampling_frequency=-1):
+    def __init__(self, path_list, mode, shift_length=1, sampling_frequency=-1, dataset_min=None, dataset_max=None):
         self.data = assemble_datasets(
             path_list=path_list, 
             mode=mode, 
@@ -205,6 +213,12 @@ class SequenceDataset(Dataset):
             individual_dataset_lengths.append(len(dataset))
         self.batch_indices = individual_dataset_lengths
 
+        # self.dataset_mean = dataset_mean
+        # self.dataset_std = dataset_std
+
+        self.dataset_min = dataset_min
+        self.dataset_max = dataset_max
+
     def __len__(self):
         return len(self.batch_indices) - 1
 
@@ -212,21 +226,43 @@ class SequenceDataset(Dataset):
         # X = torch.tensor(self.data.datasets[index].dataframe.values, dtype=torch.float32)
         # y = torch.tensor(self.data.datasets[index].dataframe.iloc[:,7:10].shift(-self.shift_length).values, dtype=torch.float32)
 
-        # mask = ~torch.any(y.isnan(),dim=1)
-        # X, y = X[mask], y[mask]
+        # if not torch.is_tensor(self.dataset_mean):
+        #     self.dataset_mean = torch.zeros(size=(1,12))
 
-        input_states = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'obj_pose_xcenter_m'],
-                                     self.data.datasets[index].dataframe.loc[:, 'obj_pose_ycenter_m'], 
-                                     self.data.datasets[index].dataframe.loc[:, 'obj_pose_theta_rad']], dtype=torch.float32).t()
-        control_inputs = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'delta_obj_pose_xcenter_m'], 
-                                       self.data.datasets[index].dataframe.loc[:, 'delta_obj_pose_ycenter_m'], 
-                                       self.data.datasets[index].dataframe.loc[:, 'delta_obj_pose_theta_rad']], dtype=torch.float32).t()
-        observations = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'ft_wrench_xforce_N'], 
-                                     self.data.datasets[index].dataframe.loc[:, 'ft_wrench_yforce_N'], 
-                                     self.data.datasets[index].dataframe.loc[:, 'ft_wrench_ztorque_Nm']], dtype=torch.float32).t()
-        target_states = torch.tensor([self.data.datasets[index].dataframe.loc[:, 'obj_pose_xcenter_m'].shift(-self.shift_length, fill_value=0),
-                                      self.data.datasets[index].dataframe.loc[:, 'obj_pose_ycenter_m'].shift(-self.shift_length, fill_value=0), 
-                                      self.data.datasets[index].dataframe.loc[:, 'obj_pose_theta_rad'].shift(-self.shift_length, fill_value=0)], 
-                                      dtype=torch.float32).t()
+        # if not torch.is_tensor(self.dataset_std):
+        #     self.dataset_std = torch.ones(size=(1,12))
+
+        target_states = torch.tensor(self.data.datasets[index].dataframe.loc[:, 
+                ['obj_pose_xcenter_m', 'obj_pose_ycenter_m', 'obj_pose_theta_rad']
+            ].shift(-self.shift_length).values, dtype=torch.float32)
+        nan_mask = ~torch.any(target_states.isnan(), dim=1)
+        target_states = target_states[nan_mask]
+        # target_states = (target_states-self.dataset_mean[:,9:12]) / self.dataset_std[:,9:12]
+        if (self.dataset_min is not None) and (self.dataset_max is not None): 
+            target_states = (target_states - self.dataset_min[:,9:12]) / (self.dataset_max[:,9:12] - self.dataset_min[:,9:12])
+
+        input_states = torch.tensor(self.data.datasets[index].dataframe.loc[:, 
+                ['obj_pose_xcenter_m', 'obj_pose_ycenter_m', 'obj_pose_theta_rad']
+            ].values, dtype=torch.float32)
+        input_states = input_states[nan_mask]
+        # input_states = (input_states - self.dataset_mean[:,0:3]) / self.dataset_std[:,0:3]
+        if (self.dataset_min is not None) and (self.dataset_max is not None): 
+            input_states = (input_states - self.dataset_min[:,0:3]) / (self.dataset_max[:,0:3] - self.dataset_min[:,0:3])
+
+        control_inputs = torch.tensor(self.data.datasets[index].dataframe.loc[:, 
+                ['delta_obj_pose_xcenter_m', 'delta_obj_pose_ycenter_m', 'delta_obj_pose_theta_rad']
+            ].values, dtype=torch.float32)
+        control_inputs = control_inputs[nan_mask]
+        # control_inputs = (control_inputs - self.dataset_mean[:,3:6]) / self.dataset_std[:,3:6]
+        if (self.dataset_min is not None) and (self.dataset_max is not None): 
+            control_inputs = (control_inputs - self.dataset_min[:,3:6]) / (self.dataset_max[:,3:6] - self.dataset_min[:,3:6])
+
+        observations = torch.tensor(self.data.datasets[index].dataframe.loc[:, 
+                ['ft_wrench_xforce_N', 'ft_wrench_yforce_N', 'ft_wrench_ztorque_Nm']
+            ].values, dtype=torch.float32)
+        observations = observations[nan_mask]
+        # observations = (observations - self.dataset_mean[:,6:9]) / self.dataset_std[:,6:9]
+        if (self.dataset_min is not None) and (self.dataset_max is not None): 
+            observations = (observations - self.dataset_min[:,6:9]) / (self.dataset_max[:,6:9] - self.dataset_min[:,6:9])
 
         return input_states, control_inputs, observations, target_states

@@ -11,7 +11,7 @@ from models.forward_model import ForwardModel
 from models.observation_model import ObservationModel
 from models.differentiable_particle_filter import DifferentiableParticleFilter
 
-from util.data_file_paths import test_path_list, test_mean, test_std
+from util.data_file_paths import test_path_list, test_mean, test_std, test_min, test_max
 from util.dataset import SequenceDataset
 
 hparams = {
@@ -30,18 +30,35 @@ hparams = {
     'record_animations': True
 }
 
-def visualize_particles(particles, filter_estimate, gt_pose):
+def visualize_particles(particles, filter_estimate, gt_pose, previous_estimates=None, previous_gt_poses=None):
     """ 
     
     """
+    if previous_gt_poses is not None: 
+        previous_gt_poses = torch.atleast_2d(previous_gt_poses)
+        # print(f"Previous GT poses shape: {previous_gt_poses.shape}")
+
     fig = plt.figure(figsize=(8, 6), dpi=80) # creates a 640 by 480 figure
     ax = fig.add_subplot(1, 1, 1, autoscale_on=True)
 
+    # scatter all particles
     ax.scatter(particles[:,:,0].detach().numpy(), particles[:,:,1].detach().numpy(), marker='+', label='Particles')
+
+    # scatter the current estimate as well as previous ones
     ax.scatter(filter_estimate[:,0].detach().numpy(), filter_estimate[:,1].detach().numpy(), color='r', marker='+', label='Current estimate')
+    if previous_estimates is not None: 
+        ax.scatter(previous_estimates[:,0].detach().numpy(), previous_estimates[:,1].detach().numpy(), color='r', marker='+', alpha=0.5)
+
+    # scatter the current ground truth pose as well as previous ones
     ax.scatter(gt_pose[0], gt_pose[1], color='g', marker='o', label='Ground truth')
+    if previous_gt_poses is not None: 
+        ax.scatter(previous_gt_poses[:,0], previous_gt_poses[:,1], color='g', marker='o', alpha=0.5)
 
     ax.set_title("Current particles")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
+    ax.set_xlim([-0.1, 0.1])
+    ax.set_ylim([-0.1, 0.1])
     ax.legend()
     ax.grid()
     return fig, ax
@@ -66,7 +83,13 @@ def convertFigureToImage(fig):
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) # convert from RGB to cv2's default BGR
     return image
 
-def unnormalize(x, mean, std):
+def unnormalize_min_max(x, min, max): 
+    """ Unnormalizes x, which is assumed to be a tensor. """
+    out = (max-min) * x + min
+    assert out.shape == x.shape
+    return out
+
+def unnormalize_mean_std(x, mean, std):
     """ Unnormalizes x, which is assumed to be a tensor. """
     out = std * x + mean 
     assert out.shape == x.shape
@@ -79,13 +102,13 @@ def main():
         mode=hparams['mode'], 
         sampling_frequency = hparams["sampling_frequency"],
         shift_length=hparams["shift_length"],
-        dataset_mean=test_mean,
-        dataset_std=test_std
+        dataset_min=test_min,
+        dataset_max=test_max
     )
     test_dataloader = DataLoader(test_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
     # 2. load the trained filter
-    dpf = torch.load("models/saved_models/20230629_JustCheckingIfEverythingWorks02.pth")
+    dpf = torch.load("models/saved_models/20230713_JustCheckingIfEverythingWorks01.pth")
     # print(dpf)
 
     # 3. for each sequence in the test dataset do: 
@@ -111,11 +134,10 @@ def main():
             # fig, _ = visualize_particles(dpf, dpf_estimates[0,:].unsqueeze(dim=0), target_states[:,0,:].squeeze())
 
             fig, _ = visualize_particles(
-                unnormalize(dpf.particles, mean=test_mean[:,9:12].unsqueeze(dim=0), std=test_std[:,9:12].unsqueeze(dim=0)), 
-                unnormalize(dpf_estimates[0,:].unsqueeze(dim=0), mean=test_mean[:,9:12], std=test_std[:,9:12]), 
-                unnormalize(target_states[:,0,:].squeeze(), mean=test_mean[:,9:12].squeeze(), std=test_std[:,9:12].squeeze())
+                unnormalize_min_max(dpf.particles, min=test_min[:,9:12].unsqueeze(dim=0), max=test_max[:,9:12].unsqueeze(dim=0)), 
+                unnormalize_min_max(dpf_estimates[0,:].unsqueeze(dim=0), min=test_min[:,9:12], max=test_max[:,9:12]), 
+                unnormalize_min_max(target_states[:,0,:].squeeze(), min=test_min[:,9:12].squeeze(), max=test_max[:,9:12].squeeze())
             )
-
             video_writer.write(convertFigureToImage(fig))
 
         # 3.2 step the filter through the sequence
@@ -132,9 +154,11 @@ def main():
                 # fig, _ = visualize_particles(dpf, estimate, target_states[:,n,:].squeeze())
 
                 fig, _ = visualize_particles(
-                    unnormalize(dpf.particles, mean=test_mean[:,9:12].unsqueeze(dim=0), std=test_std[:,9:12].unsqueeze(dim=0)), 
-                    unnormalize(estimate, mean=test_mean[:,9:12], std=test_std[:,9:12]), 
-                    unnormalize(target_states[:,n,:].squeeze(), mean=test_mean[:,9:12].squeeze(), std=test_std[:,9:12].squeeze())
+                    unnormalize_min_max(dpf.particles, min=test_min[:,9:12].unsqueeze(dim=0), max=test_max[:,9:12].unsqueeze(dim=0)), 
+                    unnormalize_min_max(estimate, min=test_min[:,9:12], max=test_max[:,9:12]), 
+                    unnormalize_min_max(target_states[:,n,:].squeeze(), min=test_min[:,9:12].squeeze(), max=test_max[:,9:12].squeeze()),
+                    previous_estimates=unnormalize_min_max(dpf_estimates[0:n,:], min=test_min[:,9:12].squeeze(), max=test_max[:,9:12].squeeze()),
+                    previous_gt_poses=unnormalize_min_max(target_states[:,0:n,:].squeeze(), min=test_min[:,9:12].squeeze(), max=test_max[:,9:12].squeeze())
                 )
 
                 video_writer.write(convertFigureToImage(fig))
@@ -148,8 +172,8 @@ def main():
         dpf_estimates = dpf_estimates.detach().numpy()
 
         # unnormalize for better plotting
-        # dpf_estimates = unnormalize(dpf_estimates, mean=test_mean[:,9:12], std=test_std[:,9:12])
-        # target_states = unnormalize(target_states, mean=test_mean[:,9:12], std=test_std[:,9:12])
+        dpf_estimates = unnormalize_min_max(dpf_estimates, min=test_min[:,9:12], max=test_max[:,9:12])
+        target_states = unnormalize_min_max(target_states, min=test_min[:,9:12], max=test_max[:,9:12])
 
         # 3.3 visualize the estimated state against the ground truth
         gs = gridspec.GridSpec(2, 3, height_ratios=[1, 1])

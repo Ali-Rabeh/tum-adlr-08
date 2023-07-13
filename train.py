@@ -30,14 +30,14 @@ hparams = {
     'resampling_soft_alpha': 0.05,
 
     'pretrain_forward_model': True,
-    'save_model': False,
-    'model_name': "20230629_JustCheckingIfEverythingWorks02.pth",
+    'save_model': True,
+    'model_name': "20230713_JustCheckingIfEverythingWorks01.pth",
 
-    'pretrain_epochs': [5, 5, 5], # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': [5, 5, 5],
+    'pretrain_epochs': [5, 5, 5, 5], # will only be used if 'pretrain_forward_model' is set to True
+    'epochs': [10, 10, 20, 20],
     'learning_rate': 1e-5,
 
-    'sequence_lengths': [1, 2, 4]
+    'sequence_lengths': [1, 2, 4, 8]
 }
 
 def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, sequence_length):

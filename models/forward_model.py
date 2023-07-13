@@ -2,9 +2,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-# Largely based on: 
-# https://github.com/zizo1111/tum-adlr-ws21-10/blob/main/pf/models/motion_model.py
-
 def init_weights(m):
     if isinstance(m, nn.Linear):
         torch.nn.init.xavier_uniform_(m.weight)
@@ -17,11 +14,11 @@ class ForwardModel(nn.Module):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.model = nn.Sequential(
-            nn.Linear(8, 12),
+            nn.Linear(8, 24),
             nn.LeakyReLU(negative_slope=0.01),
-            nn.Linear(12, 12),
+            nn.Linear(24, 24),
             nn.LeakyReLU(negative_slope=0.01),
-            nn.Linear(12, 4)
+            nn.Linear(24, 8)
         )
 
         self.model.apply(init_weights)
@@ -56,13 +53,27 @@ class ForwardModel(nn.Module):
         # do a forward pass
         network_inputs.to(self.device)
         out = self.model(network_inputs)
+        # print(f"Out shape: {out.shape}")
 
         # sample prediction
-        predicted_mean = out
-        predicted_covariance = 0.01*torch.eye(4)
+        predicted_mean = out[:,:,0:4].squeeze()
+        predicted_mean = torch.atleast_2d(predicted_mean)
+        # print(f"Predicted mean shape: {predicted_mean.shape}")
 
-        # Reparameterization trick apparently --> How does this work?
+        # we treat the covariance output from the network as though it is in logspace
+        cov_diag_elements = torch.clamp(torch.exp(out[:,:,4:8]), max=2).squeeze()
+        cov_diag_elements = torch.atleast_2d(cov_diag_elements)
+        # print(f"Cov diag elements shape: {cov_diag_elements.shape}")
+
+        predicted_covariance = torch.zeros(size=(cov_diag_elements.shape[0], 4, 4))
+        for counter in range(cov_diag_elements.shape[0]): 
+            predicted_covariance[counter,:,:] = torch.diag(cov_diag_elements[counter,:])
+
+        # print(f"Predicted covariance shape: {predicted_covariance.shape}")
+
         # we need to use rsample instead of sample here to enable backpropagation (rsample: sampling using reparameterization trick)
         predicted_particle_states_diff = torch.distributions.MultivariateNormal(predicted_mean, predicted_covariance).rsample()
+        predicted_particle_states_diff = predicted_particle_states_diff[None,:,:]
+        # print(f"Prediction shape: {predicted_particle_states_diff.shape}")
 
         return predicted_particle_states_diff

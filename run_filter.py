@@ -174,6 +174,7 @@ def main():
         # unnormalize for better plotting
         dpf_estimates = unnormalize_min_max(dpf_estimates, min=test_min[:,9:12], max=test_max[:,9:12])
         target_states = unnormalize_min_max(target_states, min=test_min[:,9:12], max=test_max[:,9:12])
+        print(f"Target States unnormalized: {target_states}")
 
         # 3.3 visualize the estimated state against the ground truth
         gs = gridspec.GridSpec(2, 3, height_ratios=[1, 1])

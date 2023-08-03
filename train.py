@@ -31,9 +31,9 @@ hparams = {
 
     'pretrain_forward_model': True,
     'save_model': True,
-    'model_name': "20230713_JustCheckingIfEverythingWorks01.pth",
+    'model_name': "20230803_JustCheckingIfEverythingWorks01.pth",
 
-    'pretrain_epochs': [5, 5, 5, 5], # will only be used if 'pretrain_forward_model' is set to True
+    'pretrain_epochs': [10, 10, 10, 10], # will only be used if 'pretrain_forward_model' is set to True
     'epochs': [10, 10, 20, 20],
     'learning_rate': 1e-5,
 

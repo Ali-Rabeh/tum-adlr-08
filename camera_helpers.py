@@ -1,12 +1,9 @@
 import numpy as np
 import cv2
+import torch
 
-object_size = [0.045, 0.045]
-image_size = (128,128)
-
-dist_to_surface_m = 0.4
-fov_x_deg = 60
-fov_y_deg = 60
+from models.observation_model import ObservationModelImages
+from util.manifold_helpers import radianToContinuous
 
 class ImageGenerator:
     def __init__(self, object_size=[0.045, 0.045], image_size=(128,128), dist_to_surface_m=0.4, fov_x_deg=60, fov_y_deg=60): 
@@ -21,29 +18,40 @@ class ImageGenerator:
         """
 
         """
-        object_diameter = np.sqrt(object_size[0]**2+object_size[1]**2)
+        object_diameter = np.sqrt(self.object_size[0]**2+self.object_size[1]**2)
 
         # the corner names in the following refer to the unrotated object
-        pos_upper_right = se2_pose_center[0:2] + object_diameter/2.0 * np.array([np.cos(0.25*np.pi + se2_pose_center[2]), np.sin(0.25*np.pi + se2_pose_center[2])])
-        pos_upper_left = se2_pose_center[0:2] + object_diameter/2.0 * np.array([np.cos(0.75*np.pi + se2_pose_center[2]), np.sin(0.75*np.pi + se2_pose_center[2])])
-        pos_lower_left = se2_pose_center[0:2] + object_diameter/2.0 * np.array([np.cos(1.25*np.pi + se2_pose_center[2]), np.sin(1.25*np.pi + se2_pose_center[2])])
-        pos_lower_right = se2_pose_center[0:2] + object_diameter/2.0 * np.array([np.cos(1.75*np.pi + se2_pose_center[2]), np.sin(1.75*np.pi + se2_pose_center[2])])
+        pos_upper_right = se2_pose_center[0:2] + object_diameter/2.0 * torch.tensor([np.cos(0.25*np.pi + se2_pose_center[2]), np.sin(0.25*np.pi + se2_pose_center[2])])
+        pos_upper_right = pos_upper_right[None,:]
 
-        return np.array([pos_upper_right, pos_upper_left, pos_lower_left, pos_lower_right])
+        pos_upper_left = se2_pose_center[0:2] + object_diameter/2.0 * torch.tensor([np.cos(0.75*np.pi + se2_pose_center[2]), np.sin(0.75*np.pi + se2_pose_center[2])])
+        pos_upper_left = pos_upper_left[None,:]
+
+        pos_lower_left = se2_pose_center[0:2] + object_diameter/2.0 * torch.tensor([np.cos(1.25*np.pi + se2_pose_center[2]), np.sin(1.25*np.pi + se2_pose_center[2])])
+        pos_lower_left = pos_lower_left[None,:]
+
+        pos_lower_right = se2_pose_center[0:2] + object_diameter/2.0 * torch.tensor([np.cos(1.75*np.pi + se2_pose_center[2]), np.sin(1.75*np.pi + se2_pose_center[2])])
+        pos_lower_right = pos_lower_right[None,:]
+
+        return torch.cat((pos_upper_right, pos_upper_left, pos_lower_left, pos_lower_right), dim=0)
 
     def cartesian_to_pixel_coordinates(self, points): 
         """
 
         """
-        fov_x_m = 2.0 * self.dist_to_surface_m * np.tan((self.fov_x_deg/2.0)*np.pi/180.0)
-        fov_y_m = 2.0 * self.dist_to_surface_m * np.tan((self.fov_y_deg/2.0)*np.pi/180.0)
+        print(f"Corner positions: {points}")
+
+        fov_x_m = 2.0 * self.dist_to_surface_m * torch.tan(torch.tensor(self.fov_x_deg/2.0)*np.pi/180.0)
+        fov_y_m = 2.0 * self.dist_to_surface_m * torch.tan(torch.tensor(self.fov_y_deg/2.0)*np.pi/180.0)
 
         # TODO: check if there's a +1 missing somewhere
-        pixel_coords_col = np.round(((points[:,0]+fov_x_m/2.0)/fov_x_m) * self.image_size[1]).astype(np.int32)
-        pixel_coords_row = np.round(((points[:,1]+fov_y_m/2.0)/fov_y_m) * self.image_size[0]).astype(np.int32)
+        print(f"Argument: {((points[:,0]+fov_x_m/2.0)/fov_x_m) * self.image_size[1]}")
+        pixel_coords_col = torch.round(((points[:,0]+fov_x_m/2.0)/fov_x_m) * self.image_size[1]).to(torch.int32)
+        pixel_coords_row = torch.round(((points[:,1]+fov_y_m/2.0)/fov_y_m) * self.image_size[0]).to(torch.int32)
 
         # add another dimension
         pixel_coords_col = pixel_coords_col[..., np.newaxis]
+        print(pixel_coords_col)
         pixel_coords_row = pixel_coords_row[..., np.newaxis]
 
         assert ((pixel_coords_col >= 1) & (pixel_coords_col <= self.image_size[1])).all()
@@ -60,14 +68,14 @@ class ImageGenerator:
         corner_pixels = self.cartesian_to_pixel_coordinates(corner_points)
         # print(f"Corner Pixels: {corner_pixels}")
 
-        image = np.zeros(shape=(image_size), dtype=np.uint8)
+        image = np.zeros(shape=(self.image_size), dtype=np.uint8)
         image = cv2.fillPoly(image, [corner_pixels], color=255)
         return image
 
 def main():
     # se2_poses_center = np.array([0, 0, -np.pi/4.0])
 
-    se2_poses_center = np.array([[ 1.0822e-06, -1.4529e-07,  2.0146e-05],
+    se2_poses_center = torch.tensor([[ 1.0822e-06, -1.4529e-07,  2.0146e-05],
         [ 5.6922e-06, -9.2387e-07,  2.2888e-05],
         [ 9.7472e-06, -4.0233e-06,  4.7684e-06],
         [ 8.8103e-06,  2.6077e-08, -5.9605e-08],
@@ -120,16 +128,30 @@ def main():
     # video_path = "test.avi"
     # video_writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'MJPG'), fps=10, frameSize=image_size)
 
+    observation_model = ObservationModelImages(use_log_probs=True)
     image_generator = ImageGenerator()
 
     for n in range(se2_poses_center.shape[0]): 
+        print(f"SE2 pose center shape: {se2_poses_center[n,:].shape}")
         image = image_generator.generate_image(se2_poses_center[n,:])
-        # image = cv2.merge([image, image, image])
 
+        torch_image = torch.tensor(image, dtype=torch.float32)
+        print(f"Image type: {torch_image.dtype}")
+
+        torch_image = torch_image[None, None, :, :]
+        print(f"Image shape: {torch_image.shape}") # (1, 1, 128, 128) --> conv layers expect (batch_size, channels, height, width)
+
+        current_pose = se2_poses_center[n,:]
+        current_pose = torch.tensor(current_pose[None, None, ...])
+        print(f"SE2 pose center shape: {current_pose.shape}")
+        likelihoods = observation_model.forward(radianToContinuous(current_pose), torch_image)
+        print(f"Likelihoods: {likelihoods}")
+
+        # image = cv2.merge([image, image, image])
         # video_writer.write(image)
 
-        cv2.imshow("Test image", image)
-        cv2.waitKey(0)
+        # cv2.imshow("Test image", image)
+        # cv2.waitKey(0)
 
     # video_writer.release()    
     cv2.destroyAllWindows()

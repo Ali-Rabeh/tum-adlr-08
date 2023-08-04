@@ -17,11 +17,16 @@ from util.dataset import SequenceDataset
 
 from run_filter import visualize_particles
 
+from camera_helpers import ImageGenerator
+
 hparams = {
     'mode': 'shifted', 
     'shift_length': 1, 
     'sampling_frequency': 50, 
     'batch_size': 1, 
+
+    'use_forces': True, 
+    'use_images': False,
 
     'num_particles': 100, 
     'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01])),
@@ -29,8 +34,8 @@ hparams = {
     'use_resampling': True,
     'resampling_soft_alpha': 0.05,
 
-    'pretrain_forward_model': True,
-    'save_model': True,
+    'pretrain_forward_model': False,
+    'save_model': False,
     'model_name': "20230803_JustCheckingIfEverythingWorks01.pth",
 
     'pretrain_epochs': [10, 10, 10, 10], # will only be used if 'pretrain_forward_model' is set to True
@@ -39,6 +44,9 @@ hparams = {
 
     'sequence_lengths': [1, 2, 4, 8]
 }
+
+# prepare image generation
+image_generator = ImageGenerator()
 
 def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, sequence_length):
     size = len(dataloader.dataset)
@@ -166,13 +174,22 @@ def train_end_to_end_single_epoch(dataloader, model, loss_fn, optimizer, sequenc
             current_measurement = observations[:,t,:]
             current_gt_state = target_states[:,t,:]
 
+            print(f"Current gt state shape: {current_gt_state.squeeze()}")
+            # print(f"Current gt state shape: {current_gt_state.squeeze()[0:1]}")
+            current_image = image_generator.generate_image(current_gt_state.squeeze())
+            current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32)
+
             # if we start a new sequence, we have to zero everything and reinitialize the model
             if t % sequence_length == 0: 
                 loss = torch.zeros([])
                 optimizer.zero_grad()
                 model.initialize(current_state.shape[0], current_state, hparams['initial_covariance'])
 
-            estimate = model.step(current_control, current_measurement)
+            if hparams['use_forces'] and not hparams['use_images']:
+                estimate = model.step(current_control, measurement=current_measurement)
+            if not hparams['use_forces'] and hparams['use_images']:
+                estimate = model.step(current_control, image=current_image)
+
             loss += loss_fn(estimate, current_gt_state)
 
             # backpropagate the loss at the end of a sequence
@@ -202,11 +219,18 @@ def validate_end_to_end_single_epoch(dataloader, model, loss_fn, sequence_length
                 current_measurement = observations[:,t,:]
                 current_gt_state = target_states[:,t,:]                 
 
+                current_image = image_generator.generate_image(current_gt_state)
+                current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32)
+
                 # if we start a new sequence, we have to reinitialize the PF
                 if t % sequence_length == 0:
                     model.initialize(current_state.shape[0], current_state, hparams['initial_covariance'])
 
-                estimate = model.step(current_control, current_measurement)
+                if hparams['use_forces'] and not hparams['use_images']: 
+                    estimate = model.step(current_control, measurement=current_measurement)
+                if not hparams['use_forces'] and hparams['use_images']: 
+                    estimate = model.step(current_control, image=current_image)
+
                 val_loss += loss_fn(estimate, current_gt_state).item()
                 print(f"Validation: input state: {current_state} | prediction = {estimate} | ground truth = {current_gt_state}")
 
@@ -278,6 +302,11 @@ def main():
     device = ("cuda" if torch.cuda.is_available() else "cpu")
 
     # define DPF
+    if hparams['use_forces'] and not hparams['use_images']: 
+        observation_model = ObservationModel(use_log_probs=hparams['use_log_probs'])
+    if not hparams['use_forces'] and hparams['use_images']: 
+        observation_model = ObservationModelImages(use_log_probs=hparams['use_log_probs'])
+
     dpf = DifferentiableParticleFilter(hparams, ForwardModel(), ObservationModel(use_log_probs=hparams['use_log_probs']))
 
     # set up loss function and optimizer

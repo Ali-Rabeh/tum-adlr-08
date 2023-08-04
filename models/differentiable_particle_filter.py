@@ -67,16 +67,21 @@ class DifferentiableParticleFilter(nn.Module):
 
         return propagated_particles
 
-    def update(self, states, measurement):
+    def update(self, states, measurement=None, image=None):
         """ Passes the current measurements to the observation model, which returns their likelihoods given the particle states. 
             The weights are then updated with these likelihoods.
 
         Args: 
             states (torch.tensor): 
             measurement (torch.tensor):
+            image (torch.tensor): 
         """
+
         states = radianToContinuous(states)
-        likelihoods = self.observation_model(states, measurement)
+        if measurement is not None:
+            likelihoods = self.observation_model(states, measurement)
+        elif measurement is not None: 
+            likelihoods = self.observation_model(states, image)
 
         if self.hparams['use_log_probs']: 
             self.weights = self.weights + likelihoods
@@ -138,7 +143,7 @@ class DifferentiableParticleFilter(nn.Module):
         assert estimates.shape == (num_input_points, 3)
         return estimates
 
-    def step(self, control_input, measurement): 
+    def step(self, control_input, measurement=None, image=None): 
         """ Performs one step of particle filter estimation. 
 
         Args: 
@@ -150,7 +155,7 @@ class DifferentiableParticleFilter(nn.Module):
 
         """
         _ = self.forward(self.particles, control_input)
-        self.update(self.particles, measurement)
+        self.update(self.particles, measurement=measurement, image=image)
         estimate = self.estimate()
 
         # currently, the resampling step is only written for weights in log-space

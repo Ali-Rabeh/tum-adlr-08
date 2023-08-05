@@ -11,11 +11,10 @@ from models.observation_model import ObservationModel
 from models.differentiable_particle_filter import DifferentiableParticleFilter
 
 from util.manifold_helpers import boxplus, radianToContinuous, continuousToRadian
-from util.data_file_paths import train_path_list, validation_path_list
 from util.data_file_paths import *
 from util.dataset import SequenceDataset
 
-from run_filter import visualize_particles
+from run_filter import visualize_particles, unnormalize_min_max
 
 from camera_helpers import ImageGenerator
 
@@ -174,9 +173,9 @@ def train_end_to_end_single_epoch(dataloader, model, loss_fn, optimizer, sequenc
             current_measurement = observations[:,t,:]
             current_gt_state = target_states[:,t,:]
 
-            print(f"Current gt state shape: {current_gt_state.squeeze()}")
-            # print(f"Current gt state shape: {current_gt_state.squeeze()[0:1]}")
-            current_image = image_generator.generate_image(current_gt_state.squeeze())
+            current_image = image_generator.generate_image(
+                unnormalize_min_max(current_gt_state.squeeze(), train_min[:,0:3].squeeze(), train_max[:,0:3].squeeze())
+            )
             current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32)
 
             # if we start a new sequence, we have to zero everything and reinitialize the model
@@ -219,7 +218,9 @@ def validate_end_to_end_single_epoch(dataloader, model, loss_fn, sequence_length
                 current_measurement = observations[:,t,:]
                 current_gt_state = target_states[:,t,:]                 
 
-                current_image = image_generator.generate_image(current_gt_state)
+                current_image = image_generator.generate_image(
+                    unnormalize_min_max(current_gt_state.squeeze(), validation_min[:,0:3].squeeze(), validation_max[:,0:3].squeeze())
+                )
                 current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32)
 
                 # if we start a new sequence, we have to reinitialize the PF

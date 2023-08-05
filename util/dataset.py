@@ -124,7 +124,6 @@ class ShiftedDataset(Dataset):
         if neg_mask.any():
             print(f"Tip poses: Found angles <pi.")
 
-
         self.obj_pose_df = pd.DataFrame(
                         help_df.object_pose[0],
                         index = range(len(help_df.object_pose[0])),

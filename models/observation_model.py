@@ -116,7 +116,6 @@ class ObservationModelImages(nn.Module):
         # pass image through the encoder and reshape it for the subsequent linear layers
         encoded_image = self.image_encoder(image)
         encoded_image = torch.reshape(encoded_image, (1,-1))
-        print(f"Shape encoded images: {encoded_image}")
         encoded_image_length = encoded_image.shape[1]
 
         # to compare it to the particle states, reshape the encoded image to 

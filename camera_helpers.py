@@ -39,19 +39,19 @@ class ImageGenerator:
         """
 
         """
-        print(f"Corner positions: {points}")
+        # print(f"Corner positions: {points}")
 
         fov_x_m = 2.0 * self.dist_to_surface_m * torch.tan(torch.tensor(self.fov_x_deg/2.0)*np.pi/180.0)
         fov_y_m = 2.0 * self.dist_to_surface_m * torch.tan(torch.tensor(self.fov_y_deg/2.0)*np.pi/180.0)
 
         # TODO: check if there's a +1 missing somewhere
-        print(f"Argument: {((points[:,0]+fov_x_m/2.0)/fov_x_m) * self.image_size[1]}")
+        # print(f"Argument: {((points[:,0]+fov_x_m/2.0)/fov_x_m) * self.image_size[1]}")
         pixel_coords_col = torch.round(((points[:,0]+fov_x_m/2.0)/fov_x_m) * self.image_size[1]).to(torch.int32)
         pixel_coords_row = torch.round(((points[:,1]+fov_y_m/2.0)/fov_y_m) * self.image_size[0]).to(torch.int32)
 
         # add another dimension
         pixel_coords_col = pixel_coords_col[..., np.newaxis]
-        print(pixel_coords_col)
+        # print(pixel_coords_col)
         pixel_coords_row = pixel_coords_row[..., np.newaxis]
 
         assert ((pixel_coords_col >= 1) & (pixel_coords_col <= self.image_size[1])).all()

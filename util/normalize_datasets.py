@@ -56,9 +56,8 @@ def calculate_min_max_of_dataset(dataloader):
             min_values[:,counter*(len(modality)-1):(counter+1)*(len(modality)-1)][replacement_indices] = torch.min(modality[counter], dim=1).values[replacement_indices]
 
             max_values_batch = torch.max(modality[counter], dim=1).values
-            replacement_indices = max_values_batch > min_values[:,counter*(len(modality)-1):(counter+1)*(len(modality)-1)]
+            replacement_indices = max_values_batch > max_values[:,counter*(len(modality)-1):(counter+1)*(len(modality)-1)]
             max_values[:,counter*(len(modality)-1):(counter+1)*(len(modality)-1)][replacement_indices] = torch.max(modality[counter], dim=1).values[replacement_indices] 
-
     return min_values, max_values    
 
 def main(): 

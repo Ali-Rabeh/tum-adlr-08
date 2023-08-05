@@ -80,7 +80,7 @@ class DifferentiableParticleFilter(nn.Module):
         states = radianToContinuous(states)
         if measurement is not None:
             likelihoods = self.observation_model(states, measurement)
-        elif measurement is not None: 
+        elif image is not None: 
             likelihoods = self.observation_model(states, image)
 
         if self.hparams['use_log_probs']: 

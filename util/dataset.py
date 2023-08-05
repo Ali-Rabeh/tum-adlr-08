@@ -163,10 +163,10 @@ class ShiftedDataset(Dataset):
             self.dataframe = self.dataframe.iloc[target_indices,:].reset_index()
             self.dataframe = self.dataframe.drop(columns='index')
 
-        # calculate the deltas of the object pose
-        self.dataframe['delta_obj_pose_xcenter_m'] = self.dataframe['obj_pose_xcenter_m'].shift(+1) - self.dataframe['obj_pose_xcenter_m']
-        self.dataframe['delta_obj_pose_ycenter_m'] = self.dataframe['obj_pose_ycenter_m'].shift(+1) - self.dataframe['obj_pose_ycenter_m']
-        self.dataframe['delta_obj_pose_theta_rad'] = self.dataframe['obj_pose_theta_rad'].shift(+1) - self.dataframe['obj_pose_theta_rad']
+        # calculate the deltas of the tip pose
+        self.dataframe['delta_tip_pose_xcenter_m'] = self.dataframe['tip_pose_xpos_m'].shift(+1) - self.dataframe['tip_pose_xpos_m']
+        self.dataframe['delta_tip_pose_ycenter_m'] = self.dataframe['tip_pose_ypos_m'].shift(+1) - self.dataframe['tip_pose_ypos_m']
+        self.dataframe['delta_tip_pose_theta_rad'] = self.dataframe['tip_pose_theta_pos_rad'].shift(+1) - self.dataframe['tip_pose_theta_pos_rad']
 
         # filter out any rows with NaNs that have been produced by the shifting
         self.dataframe.dropna(axis=0, how='any', inplace=True)
@@ -186,9 +186,9 @@ class ShiftedDataset(Dataset):
         input_states = torch.tensor([self.dataframe.loc[input_index, 'obj_pose_xcenter_m'],
                                      self.dataframe.loc[input_index, 'obj_pose_ycenter_m'], 
                                      self.dataframe.loc[input_index, 'obj_pose_theta_rad']])
-        control_inputs = torch.tensor([self.dataframe.loc[input_index, 'delta_obj_pose_xcenter_m'], 
-                                       self.dataframe.loc[input_index, 'delta_obj_pose_ycenter_m'], 
-                                       self.dataframe.loc[input_index, 'delta_obj_pose_theta_rad']])
+        control_inputs = torch.tensor([self.dataframe.loc[input_index, 'delta_tip_pose_xcenter_m'], 
+                                       self.dataframe.loc[input_index, 'delta_tip_pose_ycenter_m'], 
+                                       self.dataframe.loc[input_index, 'delta_tip_pose_theta_rad']])
         observations = torch.tensor([self.dataframe.loc[input_index, 'ft_wrench_xforce_N'], 
                                      self.dataframe.loc[input_index, 'ft_wrench_yforce_N'], 
                                      self.dataframe.loc[input_index, 'ft_wrench_ztorque_Nm']])
@@ -249,7 +249,7 @@ class SequenceDataset(Dataset):
             input_states = (input_states - self.dataset_min[:,0:3]) / (self.dataset_max[:,0:3] - self.dataset_min[:,0:3])
 
         control_inputs = torch.tensor(self.data.datasets[index].dataframe.loc[:, 
-                ['delta_obj_pose_xcenter_m', 'delta_obj_pose_ycenter_m', 'delta_obj_pose_theta_rad']
+                ['delta_tip_pose_xcenter_m', 'delta_tip_pose_ycenter_m', 'delta_tip_pose_theta_rad']
             ].values, dtype=torch.float32)
         control_inputs = control_inputs[nan_mask]
         # control_inputs = (control_inputs - self.dataset_mean[:,3:6]) / self.dataset_std[:,3:6]

@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from models.forward_model import ForwardModel
-from models.observation_model import ObservationModel
+from models.observation_model import ObservationModel, ObservationModelImages
 from models.differentiable_particle_filter import DifferentiableParticleFilter
 
 from util.manifold_helpers import boxplus, radianToContinuous, continuousToRadian
@@ -28,20 +28,22 @@ hparams = {
     'use_images': False,
 
     'num_particles': 100, 
-    'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01])),
+    'initial_covariance': torch.diag(torch.tensor([0.05, 0.05, 0.05])),
     'use_log_probs': True,
     'use_resampling': True,
     'resampling_soft_alpha': 0.05,
 
     'pretrain_forward_model': False,
-    'save_model': False,
-    'model_name': "20230803_JustCheckingIfEverythingWorks01.pth",
+    'use_pretrained_forward_model': True,
 
-    'pretrain_epochs': [10, 10, 10, 10], # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': [10, 10, 20, 20],
-    'learning_rate': 1e-5,
+    'save_model': True,
+    'model_name': "20230805_OnlyForceObservationsWithPretrainedForwardModel.pth",
 
-    'sequence_lengths': [1, 2, 4, 8]
+    'pretrain_epochs': [10, 10, 20, 20, 50], # will only be used if 'pretrain_forward_model' is set to True
+    'epochs': [10],
+    'learning_rate': 1e-3,
+
+    'sequence_lengths': [16]
 }
 
 # prepare image generation
@@ -141,17 +143,29 @@ def pretrain_forward_model(train_dataloader, validation_dataloader, model, loss_
     best_validation_loss = 1000.0
     for sequence_index in range(len(hparams['sequence_lengths'])):
         sequence_length = hparams['sequence_lengths'][sequence_index]
+
         for epoch in range(hparams['pretrain_epochs'][sequence_index]):
+            learning_rate = 0.95 ** epoch * hparams['learning_rate']
+            optimizer.param_groups[0]['lr'] = learning_rate
+
             model, batch_losses = pretrain_forward_model_single_epoch(train_dataloader, model, loss_fn=loss_fn, optimizer=optimizer, sequence_length=sequence_length)
             train_losses.append(torch.mean(batch_losses))
 
             val_loss = validate_forward_model_single_epoch(validation_dataloader, model, loss_fn=loss_fn, sequence_length=sequence_length)
             validation_losses.append(val_loss)
 
-            if val_loss < best_validation_loss:
+            # from the last sequence, that is, the longest sequence of prediction steps used for training, we want the best model
+            if val_loss < best_validation_loss and sequence_index==len(hparams['sequence_lengths'])-1:
+                best_validation_loss = val_loss
                 best_model = model
 
-            print(f"Pretraining | Sequence length = {sequence_length} | Epoch {epoch+1} finished with validation loss: {val_loss}")
+            print("Pretraining | Sequence length = {} | LR = {:.4e} | Epoch {} finished with validation loss: {}".format(
+                    sequence_length, 
+                    optimizer.param_groups[0]['lr'],
+                    epoch+1,
+                    val_loss
+                )
+            )
 
     return best_model, train_losses, validation_losses
 
@@ -233,7 +247,7 @@ def validate_end_to_end_single_epoch(dataloader, model, loss_fn, sequence_length
                     estimate = model.step(current_control, image=current_image)
 
                 val_loss += loss_fn(estimate, current_gt_state).item()
-                print(f"Validation: input state: {current_state} | prediction = {estimate} | ground truth = {current_gt_state}")
+                # print(f"Validation: input state: {current_state} | prediction = {estimate} | ground truth = {current_gt_state}")
 
     val_loss /= len(dataloader)
     return val_loss
@@ -251,17 +265,27 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
 
     for sequence_index in range(len(hparams['sequence_lengths'])):
         sequence_length = hparams['sequence_lengths'][sequence_index]
-        for epoch in range(hparams['epochs'][sequence_index]): 
+        for epoch in range(hparams['epochs'][sequence_index]):
+            learning_rate = 0.85 ** epoch * hparams['learning_rate']
+            optimizer.param_groups[0]['lr'] = learning_rate            
+
             model, batch_losses = train_end_to_end_single_epoch(train_dataloader, model, loss_fn, optimizer, sequence_length)
             train_losses.append(torch.mean(torch.tensor(batch_losses)))
 
             val_loss = validate_end_to_end_single_epoch(validation_dataloader, model, loss_fn, sequence_length)
             validation_losses.append(val_loss)
 
-            if val_loss <= best_validation_loss:
+            if val_loss <= best_validation_loss and sequence_index==len(hparams['sequence_lengths'])-1:
+                best_validation_loss = val_loss
                 best_model = model
 
-            print(f"End-to-end training | Sequence length = {sequence_length} | Epoch {epoch+1} finished with validation loss: {val_loss}")
+            print("End-to-end training | Sequence length = {} | LR = {:.4e} | Epoch {} finished with validation loss: {}".format(
+                    sequence_length, 
+                    optimizer.param_groups[0]['lr'],
+                    epoch+1,
+                    val_loss
+                )
+            )
 
     return best_model, train_losses, validation_losses
 
@@ -270,11 +294,15 @@ def plot_losses(train_losses, validation_losses, title):
 
     """
     fig, ax = plt.subplots(1, 1)
-    ax.plot(range(len(train_losses)), train_losses, label='Train')
-    ax.plot(range(len(validation_losses)), validation_losses, label='Validation')
+    ax.plot(range(len(train_losses)), np.log(train_losses), label='Train')
+    ax.plot(range(len(validation_losses)), np.log(validation_losses), label='Validation')
+
+    ax.set_title(title)
+    ax.set_xlabel("Epochs")
+    ax.set_ylabel("Log-Loss")
+
     ax.legend()
     ax.grid()
-    ax.set_title(title)
     return fig, ax
 
 def main(): 
@@ -308,7 +336,7 @@ def main():
     if not hparams['use_forces'] and hparams['use_images']: 
         observation_model = ObservationModelImages(use_log_probs=hparams['use_log_probs'])
 
-    dpf = DifferentiableParticleFilter(hparams, ForwardModel(), ObservationModel(use_log_probs=hparams['use_log_probs']))
+    dpf = DifferentiableParticleFilter(hparams, ForwardModel(), observation_model)
 
     # set up loss function and optimizer
     loss_fn = nn.MSELoss()
@@ -320,10 +348,13 @@ def main():
         best_forward_model, train_losses, validation_losses = pretrain_forward_model(train_dataloader,validation_dataloader, dpf.forward_model, loss_fn, optimizer)
 
         dpf.forward_model = best_forward_model
-        # dpf.forward_model.requires_grad_(False) # freeze weights of the forward model if it has been pretrained
 
         fig_pretrain, _ = plot_losses(train_losses, validation_losses, "Losses pretraining")
         plt.show()
+
+    if hparams['use_pretrained_forward_model']: 
+        dpf.forward_model = torch.load('experiments/20230805_SimpleForwardModel_UpTo16Steps.pth')
+        dpf.forward_model.requires_grad_(False) # freeze weights of the forward model if it has been pretrained
 
     # train end-to-end
     best_dpf, train_losses, validation_losses = train_end_to_end(train_dataloader, validation_dataloader, dpf, loss_fn, optimizer)

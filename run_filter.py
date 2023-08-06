@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
 from models.forward_model import ForwardModel
-from models.observation_model import ObservationModel
 from models.differentiable_particle_filter import DifferentiableParticleFilter
 
 from util.data_file_paths import test_path_list, test_mean, test_std, test_min, test_max
@@ -24,6 +23,7 @@ hparams = {
 
     'use_forces': True,
     'use_images': False,
+    'model_path': "models/saved_models/final/20230806_DPF_PretrainedForwardModel_ForceObservations.pth",
 
     'num_particles': 500, 
     'initial_covariance': torch.diag(torch.tensor([0.2, 0.2, 0.2])), 
@@ -115,8 +115,8 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
     # 2. load the trained filter
-    dpf = torch.load("models/saved_models/20230806_OnlyForceObservationsWithPretrainedForwardModel.pth")
-    # print(dpf)
+    dpf = torch.load(hparams['model_path'])
+    print(dpf)
 
     # 3. for each sequence in the test dataset do: 
     for batch, (input_states, control_inputs, observations, target_states) in enumerate(test_dataloader):
@@ -150,15 +150,21 @@ def main():
             current_control_inputs = control_inputs[:,n,:].unsqueeze(dim=1)
             current_measurements = observations[:,n,:]
             
+            # generate an image
             current_image = image_generator.generate_image(
             	unnormalize_min_max(input_states[:,n,:].squeeze(), test_min[:,0:3].squeeze(), test_max[:,0:3].squeeze())
             )
             current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32) / 255.0
 
+            #  filter estimate for the current time step depending on the used observation model
             if hparams['use_forces'] and not hparams['use_images']:
                 estimate = dpf.step(current_control_inputs, measurement=current_measurements)
+
             if not hparams['use_forces'] and hparams['use_images']:
                 estimate = dpf.step(current_control_inputs, image=current_image)
+
+            if hparams['use_forces'] and hparams['use_images']: 
+                estimate = dpf.step(current_control_inputs, measurement=current_measurements, image=current_image)
             
             dpf_estimates[n,:] = estimate
             print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")

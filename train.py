@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from models.forward_model import ForwardModel
-from models.observation_model import ObservationModel, ObservationModelImages
+from models.observation_model import ObservationModelForces, ObservationModelImages, ObservationModelForcesAndImages
 from models.differentiable_particle_filter import DifferentiableParticleFilter
 
 from util.manifold_helpers import boxplus, radianToContinuous, continuousToRadian
@@ -15,7 +15,6 @@ from util.data_file_paths import *
 from util.dataset import SequenceDataset
 
 from run_filter import visualize_particles, unnormalize_min_max
-
 from camera_helpers import ImageGenerator
 
 hparams = {
@@ -24,8 +23,8 @@ hparams = {
     'sampling_frequency': 50, 
     'batch_size': 1, 
 
-    'use_forces': False, 
-    'use_images': True,
+    'use_forces': True, 
+    'use_images': False,
 
     'num_particles': 100, 
     'initial_covariance': torch.diag(torch.tensor([0.2, 0.2, 0.2])),
@@ -40,7 +39,7 @@ hparams = {
     'use_pretrained_forward_model': True,
 
     'save_model': True,
-    'model_name': "20230806_OnlyImageObservationsWithPretrainedForwardModel.pth",
+    'model_name': "20230806_PretrainedForwardModel_ForceObservations.pth",
 
     'pretrain_epochs': [10, 10, 20, 20, 50], # will only be used if 'pretrain_forward_model' is set to True
     'epochs': [50, 50, 50, 50, 50],
@@ -203,8 +202,12 @@ def train_end_to_end_single_epoch(dataloader, model, loss_fn, optimizer, sequenc
 
             if hparams['use_forces'] and not hparams['use_images']:
                 estimate = model.step(current_control, measurement=current_measurement)
+
             if not hparams['use_forces'] and hparams['use_images']:
                 estimate = model.step(current_control, image=current_image)
+
+            if hparams['use_forces'] and hparams['use_images']: 
+                estimate = model.step(current_control, measurement=current_measurement, image=current_image)
 
             loss += loss_fn(estimate, current_gt_state)
 
@@ -238,7 +241,7 @@ def validate_end_to_end_single_epoch(dataloader, model, loss_fn, sequence_length
                 current_image = image_generator.generate_image(
                     unnormalize_min_max(current_gt_state.squeeze(), validation_min[:,0:3].squeeze(), validation_max[:,0:3].squeeze())
                 )
-                current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32)
+                current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32) / 255.0
 
                 # if we start a new sequence, we have to reinitialize the PF
                 if t % sequence_length == 0:
@@ -246,8 +249,12 @@ def validate_end_to_end_single_epoch(dataloader, model, loss_fn, sequence_length
 
                 if hparams['use_forces'] and not hparams['use_images']: 
                     estimate = model.step(current_control, measurement=current_measurement)
+
                 if not hparams['use_forces'] and hparams['use_images']: 
                     estimate = model.step(current_control, image=current_image)
+
+                if hparams['use_forces'] and hparams['use_images']: 
+                    estimate = model.step(current_control, measurement=current_measurement, image=current_image)
 
                 val_loss += loss_fn(estimate, current_gt_state).item()
                 # print(f"Validation: input state: {current_state} | prediction = {estimate} | ground truth = {current_gt_state}")
@@ -346,10 +353,14 @@ def main():
     device = ("cuda" if torch.cuda.is_available() else "cpu")
 
     # define DPF
-    if hparams['use_forces'] and not hparams['use_images']: 
-        observation_model = ObservationModel(use_log_probs=hparams['use_log_probs'])
-    if not hparams['use_forces'] and hparams['use_images']: 
+    if hparams['use_forces'] and not hparams['use_images']: # use only forces in the observation model
+        observation_model = ObservationModelForces(use_log_probs=hparams['use_log_probs'])
+
+    if not hparams['use_forces'] and hparams['use_images']: # use only images in the observation model
         observation_model = ObservationModelImages(use_log_probs=hparams['use_log_probs'])
+
+    if hparams['use_forces'] and hparams['use_images']: # use both forces and images in the observation model
+        observation_model = ObservationModelForcesAndImages(use_log_probs=hparams['use_log_probs'])
 
     dpf = DifferentiableParticleFilter(hparams, ForwardModel(), observation_model)
 
@@ -369,7 +380,7 @@ def main():
         plt.show()
 
     if hparams['use_pretrained_forward_model']: 
-        dpf.forward_model = torch.load('experiments/20230806_SimpleForwardModel_UpTo16Steps.pth')
+        dpf.forward_model = torch.load('models/saved_models/final/20230806_SimpleForwardModel_UpTo16Steps.pth')
         dpf.forward_model.requires_grad_(False) # freeze weights of the forward model if it has been pretrained
 
     # train end-to-end

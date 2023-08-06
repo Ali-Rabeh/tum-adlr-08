@@ -14,14 +14,19 @@ from models.differentiable_particle_filter import DifferentiableParticleFilter
 from util.data_file_paths import test_path_list, test_mean, test_std, test_min, test_max
 from util.dataset import SequenceDataset
 
+from camera_helpers import ImageGenerator
+
 hparams = {
     'mode': 'shifted',
     'shift_length': 1, 
     'sampling_frequency': 50, 
     'batch_size': 1, 
 
+    'use_forces': True,
+    'use_images': False,
+
     'num_particles': 500, 
-    'initial_covariance': torch.diag(torch.tensor([0.01, 0.01, 0.01])), 
+    'initial_covariance': torch.diag(torch.tensor([0.2, 0.2, 0.2])), 
 
     'use_log_probs': True,
     'use_resampling': True,
@@ -29,6 +34,8 @@ hparams = {
 
     'record_animations': True
 }
+
+image_generator = ImageGenerator()
 
 def visualize_particles(particles, filter_estimate, gt_pose, previous_estimates=None, previous_gt_poses=None):
     """ 
@@ -108,13 +115,13 @@ def main():
     test_dataloader = DataLoader(test_dataset, batch_size=hparams['batch_size'], shuffle=False)
 
     # 2. load the trained filter
-    dpf = torch.load("models/saved_models/20230713_JustCheckingIfEverythingWorks01.pth")
+    dpf = torch.load("models/saved_models/20230806_OnlyForceObservationsWithPretrainedForwardModel.pth")
     # print(dpf)
 
     # 3. for each sequence in the test dataset do: 
     for batch, (input_states, control_inputs, observations, target_states) in enumerate(test_dataloader):
-        # sequence_length = X.shape[1]
-        sequence_length = 10
+        sequence_length = input_states.shape[1]
+        # sequence_length = 20
 
         dpf_estimates = torch.zeros(size=(sequence_length, 3))
 
@@ -131,8 +138,6 @@ def main():
             video_path = "experiments/animations/sequence" + str(batch) + ".avi"
             video_writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'MJPG'), fps=1, frameSize=(640, 480))
 
-            # fig, _ = visualize_particles(dpf, dpf_estimates[0,:].unsqueeze(dim=0), target_states[:,0,:].squeeze())
-
             fig, _ = visualize_particles(
                 unnormalize_min_max(dpf.particles, min=test_min[:,9:12].unsqueeze(dim=0), max=test_max[:,9:12].unsqueeze(dim=0)), 
                 unnormalize_min_max(dpf_estimates[0,:].unsqueeze(dim=0), min=test_min[:,9:12], max=test_max[:,9:12]), 
@@ -144,15 +149,21 @@ def main():
         for n in range(1, sequence_length):
             current_control_inputs = control_inputs[:,n,:].unsqueeze(dim=1)
             current_measurements = observations[:,n,:]
+            
+            current_image = image_generator.generate_image(
+            	unnormalize_min_max(input_states[:,n,:].squeeze(), test_min[:,0:3].squeeze(), test_max[:,0:3].squeeze())
+            )
+            current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32) / 255.0
 
-            # print(current_control_inputs.shape)
-            estimate = dpf.step(current_control_inputs, current_measurements)
-            print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
+            if hparams['use_forces'] and not hparams['use_images']:
+                estimate = dpf.step(current_control_inputs, measurement=current_measurements)
+            if not hparams['use_forces'] and hparams['use_images']:
+                estimate = dpf.step(current_control_inputs, image=current_image)
+            
             dpf_estimates[n,:] = estimate
+            print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
 
             if hparams['record_animations']:
-                # fig, _ = visualize_particles(dpf, estimate, target_states[:,n,:].squeeze())
-
                 fig, _ = visualize_particles(
                     unnormalize_min_max(dpf.particles, min=test_min[:,9:12].unsqueeze(dim=0), max=test_max[:,9:12].unsqueeze(dim=0)), 
                     unnormalize_min_max(estimate, min=test_min[:,9:12], max=test_max[:,9:12]), 
@@ -160,7 +171,6 @@ def main():
                     previous_estimates=unnormalize_min_max(dpf_estimates[0:n,:], min=test_min[:,9:12].squeeze(), max=test_max[:,9:12].squeeze()),
                     previous_gt_poses=unnormalize_min_max(target_states[:,0:n,:].squeeze(), min=test_min[:,9:12].squeeze(), max=test_max[:,9:12].squeeze())
                 )
-
                 video_writer.write(convertFigureToImage(fig))
 
         # destroy everything needed for the animations
@@ -185,8 +195,8 @@ def main():
         ax3 = plt.subplot(gs[1,1])
         ax4 = plt.subplot(gs[1,2])
 
-        ax1.scatter(target_states[:,:10,0], target_states[:,:10,1], label="Ground Truth")
-        ax1.scatter(dpf_estimates[:10,0], dpf_estimates[:10,1], marker='+', label='Filter Estimate')
+        ax1.scatter(target_states[:,0:sequence_length,0], target_states[:,0:sequence_length,1], label="Ground Truth")
+        ax1.scatter(dpf_estimates[0:sequence_length,0], dpf_estimates[0:sequence_length,1], marker='+', label='Filter Estimate')
         ax1.axis('equal')
         ax1.set_title("Position")
         ax1.set_xlabel('x (m)')
@@ -194,22 +204,22 @@ def main():
         ax1.legend()
         ax1.grid()
 
-        ax2.plot(range(sequence_length), target_states[:,:10,0].squeeze())
-        ax2.plot(range(sequence_length), dpf_estimates[:10,0])
+        ax2.plot(range(sequence_length), target_states[:,0:sequence_length,0].squeeze())
+        ax2.plot(range(sequence_length), dpf_estimates[0:sequence_length,0])
         ax2.set_title("X-Position")
         ax2.set_xlabel('Steps')
         ax2.set_ylabel('x_pos (m)')
         ax2.grid()
 
-        ax3.plot(range(sequence_length), target_states[:,:10,1].squeeze())
-        ax3.plot(range(sequence_length), dpf_estimates[:10,1])
+        ax3.plot(range(sequence_length), target_states[:,0:sequence_length,1].squeeze())
+        ax3.plot(range(sequence_length), dpf_estimates[0:sequence_length,1])
         ax3.set_title("Y-Position")
         ax3.set_xlabel('Steps')
         ax3.set_ylabel('y_pos (m)')
         ax3.grid()
 
-        ax4.plot(range(sequence_length), target_states[:,:10,2].squeeze())
-        ax4.plot(range(sequence_length), dpf_estimates[:10,2])
+        ax4.plot(range(sequence_length), target_states[:,0:sequence_length,2].squeeze())
+        ax4.plot(range(sequence_length), dpf_estimates[0:sequence_length,2])
         ax4.set_title("Orientation")
         ax4.set_xlabel('Steps')
         ax4.set_ylabel('theta (rad)')

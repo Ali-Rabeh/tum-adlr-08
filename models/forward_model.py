@@ -61,7 +61,7 @@ class ForwardModel(nn.Module):
         # print(f"Predicted mean shape: {predicted_mean.shape}")
 
         # we treat the covariance output from the network as though it is in logspace
-        cov_diag_elements = torch.clamp(torch.exp(out[:,:,4:8]), max=0.5).squeeze()
+        cov_diag_elements = torch.clamp(torch.exp(out[:,:,4:8]), max=1).squeeze()
         cov_diag_elements = torch.atleast_2d(cov_diag_elements)
         # print(f"Cov diag elements shape: {cov_diag_elements.shape}")
 

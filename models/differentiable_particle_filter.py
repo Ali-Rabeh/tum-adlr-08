@@ -24,6 +24,8 @@ class DifferentiableParticleFilter(nn.Module):
         self.particles = torch.zeros(size=[]) # particles are kept in a discontinuous representation!
         self.weights = torch.zeros(size=[])
 
+        self.step_counter = 0
+
         self.current_best_estimate = torch.zeros(size=(1,3))
 
     def initialize(self, batch_size, initial_states, initial_covariance):
@@ -121,7 +123,7 @@ class DifferentiableParticleFilter(nn.Module):
         indices = distribution.sample(sample_shape=(num_particles,))
 
         # draw corresponding particles
-        self.particles = self.particles[:, indices, :]
+        self.particles = self.particles[:, indices, :] + 0.05*torch.randn(size=self.particles.shape)
         assert self.particles.shape == (batch_size, num_particles, state_dim) 
 
     def estimate(self): 
@@ -160,7 +162,10 @@ class DifferentiableParticleFilter(nn.Module):
 
         # currently, the resampling step is only written for weights in log-space
         if self.hparams['use_resampling'] and self.hparams['use_log_probs']: 
-            self.resample(self.hparams['resampling_soft_alpha'])
+            if self.step_counter % 1 == 0: 
+                self.resample(self.hparams['resampling_soft_alpha'])
+
+        self.step_counter += 1
 
         return estimate
 

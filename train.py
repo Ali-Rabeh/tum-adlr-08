@@ -24,26 +24,29 @@ hparams = {
     'sampling_frequency': 50, 
     'batch_size': 1, 
 
-    'use_forces': True, 
-    'use_images': False,
+    'use_forces': False, 
+    'use_images': True,
 
     'num_particles': 100, 
-    'initial_covariance': torch.diag(torch.tensor([0.05, 0.05, 0.05])),
+    'initial_covariance': torch.diag(torch.tensor([0.2, 0.2, 0.2])),
     'use_log_probs': True,
     'use_resampling': True,
     'resampling_soft_alpha': 0.05,
+
+    'lr_decay_rate': 0.95,
+    'early_stopping_epochs': 10,
 
     'pretrain_forward_model': False,
     'use_pretrained_forward_model': True,
 
     'save_model': True,
-    'model_name': "20230805_OnlyForceObservationsWithPretrainedForwardModel.pth",
+    'model_name': "20230806_OnlyImageObservationsWithPretrainedForwardModel.pth",
 
     'pretrain_epochs': [10, 10, 20, 20, 50], # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': [10],
-    'learning_rate': 1e-3,
+    'epochs': [50, 50, 50, 50, 50],
+    'learning_rate': 1e-4,
 
-    'sequence_lengths': [16]
+    'sequence_lengths': [1, 2, 4, 8, 16]
 }
 
 # prepare image generation
@@ -140,12 +143,12 @@ def pretrain_forward_model(train_dataloader, validation_dataloader, model, loss_
     model.to(device)
 
     train_losses, validation_losses = [], []
-    best_validation_loss = 1000.0
     for sequence_index in range(len(hparams['sequence_lengths'])):
         sequence_length = hparams['sequence_lengths'][sequence_index]
+        best_validation_loss = 1000.0
 
         for epoch in range(hparams['pretrain_epochs'][sequence_index]):
-            learning_rate = 0.95 ** epoch * hparams['learning_rate']
+            learning_rate = hparams['lr_decay_rate'] ** epoch * hparams['learning_rate']
             optimizer.param_groups[0]['lr'] = learning_rate
 
             model, batch_losses = pretrain_forward_model_single_epoch(train_dataloader, model, loss_fn=loss_fn, optimizer=optimizer, sequence_length=sequence_length)
@@ -190,7 +193,7 @@ def train_end_to_end_single_epoch(dataloader, model, loss_fn, optimizer, sequenc
             current_image = image_generator.generate_image(
                 unnormalize_min_max(current_gt_state.squeeze(), train_min[:,0:3].squeeze(), train_max[:,0:3].squeeze())
             )
-            current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32)
+            current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32) / 255.0
 
             # if we start a new sequence, we have to zero everything and reinitialize the model
             if t % sequence_length == 0: 
@@ -260,13 +263,14 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
     model.to(device)
 
     train_losses, validation_losses = [], []
-    best_validation_loss = 100000.0
     best_model = None
 
     for sequence_index in range(len(hparams['sequence_lengths'])):
         sequence_length = hparams['sequence_lengths'][sequence_index]
+        best_validation_loss = 100000.0
+        early_stopping_counter = 0
         for epoch in range(hparams['epochs'][sequence_index]):
-            learning_rate = 0.85 ** epoch * hparams['learning_rate']
+            learning_rate = hparams['lr_decay_rate'] ** epoch * hparams['learning_rate']
             optimizer.param_groups[0]['lr'] = learning_rate            
 
             model, batch_losses = train_end_to_end_single_epoch(train_dataloader, model, loss_fn, optimizer, sequence_length)
@@ -275,17 +279,28 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
             val_loss = validate_end_to_end_single_epoch(validation_dataloader, model, loss_fn, sequence_length)
             validation_losses.append(val_loss)
 
-            if val_loss <= best_validation_loss and sequence_index==len(hparams['sequence_lengths'])-1:
+            if val_loss <= best_validation_loss:
                 best_validation_loss = val_loss
-                best_model = model
+                early_stopping_counter = 0 
 
-            print("End-to-end training | Sequence length = {} | LR = {:.4e} | Epoch {} finished with validation loss: {}".format(
+                if sequence_index==len(hparams['sequence_lengths'])-1:
+                    best_model = model
+            else:
+                early_stopping_counter += 1
+
+            print("End-to-end | Sequence length = {} | LR = {:.4e} | Epoch = {} | Train loss: {:.6f} | Val. loss: {:.6f} | {}".format(
                     sequence_length, 
                     optimizer.param_groups[0]['lr'],
                     epoch+1,
-                    val_loss
+                    torch.mean(torch.tensor(batch_losses)),
+                    val_loss,
+                    early_stopping_counter
                 )
             )
+            
+            if early_stopping_counter == hparams['early_stopping_epochs']: 
+                print("Early stopping.")
+                break
 
     return best_model, train_losses, validation_losses
 
@@ -348,12 +363,13 @@ def main():
         best_forward_model, train_losses, validation_losses = pretrain_forward_model(train_dataloader,validation_dataloader, dpf.forward_model, loss_fn, optimizer)
 
         dpf.forward_model = best_forward_model
+        # torch.save(best_forward_model, 'experiments/20230806_SimpleForwardModel_UpTo16Steps.pth') 
 
         fig_pretrain, _ = plot_losses(train_losses, validation_losses, "Losses pretraining")
         plt.show()
 
     if hparams['use_pretrained_forward_model']: 
-        dpf.forward_model = torch.load('experiments/20230805_SimpleForwardModel_UpTo16Steps.pth')
+        dpf.forward_model = torch.load('experiments/20230806_SimpleForwardModel_UpTo16Steps.pth')
         dpf.forward_model.requires_grad_(False) # freeze weights of the forward model if it has been pretrained
 
     # train end-to-end

@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
 
-from models.forward_model import ForwardModel
+from models.forward_model import ForwardModel, ForwardModelImages
 from models.observation_model import ObservationModelForces, ObservationModelImages, ObservationModelForcesAndImages
 from models.differentiable_particle_filter import DifferentiableParticleFilter
 
@@ -23,8 +23,10 @@ hparams = {
     'sampling_frequency': 50, 
     'batch_size': 1, 
 
-    'use_forces': True, 
-    'use_images': False,
+    'use_images_for_forward_model': False, 
+
+    'use_forces_for_observation_model': True, 
+    'use_images_for_observation_model': True,
 
     'num_particles': 100, 
     'initial_covariance': torch.diag(torch.tensor([0.2, 0.2, 0.2])),
@@ -32,18 +34,18 @@ hparams = {
     'use_resampling': True,
     'resampling_soft_alpha': 0.05,
 
-    'lr_decay_rate': 0.95,
-    'early_stopping_epochs': 10,
+    'lr_decay_rate': 0.9,
+    'early_stopping_epochs': 20,
 
     'pretrain_forward_model': False,
     'use_pretrained_forward_model': True,
 
     'save_model': True,
-    'model_name': "20230806_PretrainedForwardModel_ForceObservations.pth",
+    'model_name': "20230807_DPF_PretrainedForwardModel_ForceAndImageObservations.pth",
 
-    'pretrain_epochs': [10, 10, 20, 20, 50], # will only be used if 'pretrain_forward_model' is set to True
+    'pretrain_epochs': [20, 20, 20, 40, 50], # will only be used if 'pretrain_forward_model' is set to True
     'epochs': [50, 50, 50, 50, 50],
-    'learning_rate': 1e-4,
+    'learning_rate': 1e-2,
 
     'sequence_lengths': [1, 2, 4, 8, 16]
 }
@@ -66,10 +68,6 @@ def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, s
             current_control = control_inputs[:,t,:].unsqueeze(dim=1)
             current_gt_state = target_states[:,t,:].unsqueeze(dim=1)
 
-            # print(f"Current state: {current_state}")
-            # print(f"Current control: {current_control}")
-            # print(f"Current GT state: {current_gt_state}")
-
             if t % sequence_length == 0:
                 loss = torch.zeros([]) 
                 optimizer.zero_grad()
@@ -78,8 +76,15 @@ def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, s
             pred_state = radianToContinuous(pred_state)
             current_control = radianToContinuous(current_control)
 
-            pred_delta = model.forward(pred_state, current_control)
-            # print(f"Pred. state: {pred_state.shape} | Pred. delta: {pred_delta.shape}")
+            if hparams['use_images_for_forward_model']:
+                current_image = image_generator.generate_image(
+                    unnormalize_min_max(current_state.squeeze(), train_min[:,0:3].squeeze(), train_max[:,0:3].squeeze())
+                )
+                current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32) / 255.0
+        
+                pred_delta = model.forward(pred_state, current_control, current_image)
+            else:
+                pred_delta = model.forward(pred_state, current_control)
 
             pred_delta = continuousToRadian(pred_delta)
             pred_state = continuousToRadian(pred_state)
@@ -117,12 +122,18 @@ def validate_forward_model_single_epoch(dataloader, model, loss_fn, sequence_len
 
                 pred_state = radianToContinuous(pred_state)
                 current_control = radianToContinuous(current_control)
-                pred_delta = model.forward(pred_state, current_control)
-                # print(f"Pred delta directly from model: {pred_delta}")
+
+                if hparams['use_images_for_forward_model']: 
+                    current_image = image_generator.generate_image(
+                        unnormalize_min_max(current_state.squeeze(), train_min[:,0:3].squeeze(), train_max[:,0:3].squeeze())
+                    )
+                    current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32) / 255.0
+                    pred_delta = model.forward(pred_state, current_control, current_image)
+                else: 
+                    pred_delta = model.forward(pred_state, current_control)
 
                 pred_delta = continuousToRadian(pred_delta)
                 pred_state = continuousToRadian(pred_state)
-                # print(f"Pred delta: {pred_delta} | Pred state: {pred_state}")
 
                 pred_state = boxplus(pred_state, pred_delta)
                 test_loss += loss_fn(pred_state, current_gt_state).item()
@@ -200,13 +211,18 @@ def train_end_to_end_single_epoch(dataloader, model, loss_fn, optimizer, sequenc
                 optimizer.zero_grad()
                 model.initialize(current_state.shape[0], current_state, hparams['initial_covariance'])
 
-            if hparams['use_forces'] and not hparams['use_images']:
+            if not hparams['use_images_for_forward_model'] and \
+                   hparams['use_forces_for_observation_model'] and \
+               not hparams['use_images_for_observation_model']:
                 estimate = model.step(current_control, measurement=current_measurement)
 
-            if not hparams['use_forces'] and hparams['use_images']:
+            if not hparams['use_images_for_forward_model'] and \
+               not hparams['use_forces_for_observation_model'] and \
+                   hparams['use_images_for_observation_model']:
                 estimate = model.step(current_control, image=current_image)
 
-            if hparams['use_forces'] and hparams['use_images']: 
+            if hparams['use_images_for_forward_model'] or \
+              (hparams['use_forces_for_observation_model'] and hparams['use_images_for_observation_model']): 
                 estimate = model.step(current_control, measurement=current_measurement, image=current_image)
 
             loss += loss_fn(estimate, current_gt_state)
@@ -247,13 +263,18 @@ def validate_end_to_end_single_epoch(dataloader, model, loss_fn, sequence_length
                 if t % sequence_length == 0:
                     model.initialize(current_state.shape[0], current_state, hparams['initial_covariance'])
 
-                if hparams['use_forces'] and not hparams['use_images']: 
+                if not hparams['use_images_for_forward_model'] and \
+                    hparams['use_forces_for_observation_model'] and \
+                not hparams['use_images_for_observation_model']:
                     estimate = model.step(current_control, measurement=current_measurement)
 
-                if not hparams['use_forces'] and hparams['use_images']: 
+                if not hparams['use_images_for_forward_model'] and \
+                not hparams['use_forces_for_observation_model'] and \
+                    hparams['use_images_for_observation_model']:
                     estimate = model.step(current_control, image=current_image)
 
-                if hparams['use_forces'] and hparams['use_images']: 
+                if hparams['use_images_for_forward_model'] or \
+                (hparams['use_forces_for_observation_model'] and hparams['use_images_for_observation_model']): 
                     estimate = model.step(current_control, measurement=current_measurement, image=current_image)
 
                 val_loss += loss_fn(estimate, current_gt_state).item()
@@ -324,7 +345,7 @@ def plot_losses(train_losses, validation_losses, title):
     ax.set_ylabel("Log-Loss")
 
     ax.legend()
-    ax.grid()
+    # ax.grid()
     return fig, ax
 
 def main(): 
@@ -352,17 +373,24 @@ def main():
     # set the device used
     device = ("cuda" if torch.cuda.is_available() else "cpu")
 
-    # define DPF
-    if hparams['use_forces'] and not hparams['use_images']: # use only forces in the observation model
+    # define the forward model of the DPF
+    if hparams['use_images_for_forward_model']: 
+        forward_model = ForwardModelImages()
+    else: 
+        forward_model = ForwardModel()
+
+    # define the observation model of the DPF
+    if hparams['use_forces_for_observation_model'] and not hparams['use_images_for_observation_model']: # use only forces in the observation model
         observation_model = ObservationModelForces(use_log_probs=hparams['use_log_probs'])
 
-    if not hparams['use_forces'] and hparams['use_images']: # use only images in the observation model
+    if not hparams['use_forces_for_observation_model'] and hparams['use_images_for_observation_model']: # use only images in the observation model
         observation_model = ObservationModelImages(use_log_probs=hparams['use_log_probs'])
 
-    if hparams['use_forces'] and hparams['use_images']: # use both forces and images in the observation model
+    if hparams['use_forces_for_observation_model'] and hparams['use_images_for_observation_model']: # use both forces and images in the observation model
         observation_model = ObservationModelForcesAndImages(use_log_probs=hparams['use_log_probs'])
 
-    dpf = DifferentiableParticleFilter(hparams, ForwardModel(), observation_model)
+    dpf = DifferentiableParticleFilter(hparams, forward_model, observation_model)
+    print(dpf)
 
     # set up loss function and optimizer
     loss_fn = nn.MSELoss()
@@ -374,13 +402,13 @@ def main():
         best_forward_model, train_losses, validation_losses = pretrain_forward_model(train_dataloader,validation_dataloader, dpf.forward_model, loss_fn, optimizer)
 
         dpf.forward_model = best_forward_model
-        # torch.save(best_forward_model, 'experiments/20230806_SimpleForwardModel_UpTo16Steps.pth') 
+        # torch.save(best_forward_model, 'experiments/20230807_SimpleForwardModel_UpTo16Steps.pth') 
 
         fig_pretrain, _ = plot_losses(train_losses, validation_losses, "Losses pretraining")
         plt.show()
 
     if hparams['use_pretrained_forward_model']: 
-        dpf.forward_model = torch.load('models/saved_models/final/20230806_SimpleForwardModel_UpTo16Steps.pth')
+        dpf.forward_model = torch.load('models/saved_models/final_two/20230807_SimpleForwardModel_UpTo16Steps.pth')
         dpf.forward_model.requires_grad_(False) # freeze weights of the forward model if it has been pretrained
 
     # train end-to-end

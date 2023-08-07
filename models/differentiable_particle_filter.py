@@ -45,12 +45,13 @@ class DifferentiableParticleFilter(nn.Module):
         assert self.particles.shape == (batch_size, self.hparams["num_particles"], 3)
         assert self.weights.shape == (batch_size, self.hparams["num_particles"], 1)
 
-    def forward(self, states, control_inputs):
+    def forward(self, states, control_inputs, image=None):
         """ Gets a differential update step for the states from the forward model and adds it to the particle states. 
 
         Args: 
             states (torch.tensor): 
             control_inputs (torch.tensor): 
+            image (torch.tensor):
 
         Returns: 
             self.particles (torch.tensor): Particles moved by one step according to the forward model.
@@ -58,9 +59,13 @@ class DifferentiableParticleFilter(nn.Module):
 
         states = radianToContinuous(states)
         control_inputs = radianToContinuous(control_inputs)
-        # print(f"States shape: {states.shape} | Control inputs shape: {control_inputs.shape}")
 
-        delta_particles = self.forward_model.forward(states, control_inputs)
+        if image is None:
+            delta_particles = self.forward_model.forward(states, control_inputs)
+        else:
+            delta_particles = self.forward_model.forward(states, control_inputs, image)
+
+        # convert to continuous representation  
         delta_particles = continuousToRadian(delta_particles)
 
         propagated_particles = boxplus(self.particles, delta_particles)
@@ -81,13 +86,13 @@ class DifferentiableParticleFilter(nn.Module):
 
         states = radianToContinuous(states)
 
-        if (measurement is not None) and (image is None): # use only force measurements
+        if ((measurement is not None) and (image is None)) or self.hparams['use_images_for_forward_model']: # use only force measurements in the observation_model
             likelihoods = self.observation_model(states, measurement=measurement)
 
-        if (measurement is None) and (image is not None): # use only images
+        if (measurement is None) and (image is not None) and not self.hparams['use_images_for_forward_model']: # use only images
             likelihoods = self.observation_model(states, image=image)
 
-        if (measurement is not None) and (image is not None): # use both force measurements and images
+        if (measurement is not None) and (image is not None) and not self.hparams['use_images_for_forward_model']: # use both force measurements and images
             likelihoods = self.observation_model(states, measurement=measurement, image=image)
 
         if self.hparams['use_log_probs']: 
@@ -159,10 +164,18 @@ class DifferentiableParticleFilter(nn.Module):
 
         Returns: 
             estimate (torch.tensor): 
-
         """
-        _ = self.forward(self.particles, control_input)
+
+        # propagate particles forward
+        if self.hparams['use_images_for_forward_model']: 
+            _ = self.forward(self.particles, control_input, image=image)
+        else: 
+            _ = self.forward(self.particles, control_input)
+
+        # incorporate observations
         self.update(self.particles, measurement=measurement, image=image)
+
+        # get the filter's current estimate
         estimate = self.estimate()
 
         # currently, the resampling step is only written for weights in log-space

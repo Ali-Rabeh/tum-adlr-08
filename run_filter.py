@@ -6,6 +6,7 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+import seaborn as sns
 
 from models.forward_model import ForwardModel
 from models.differentiable_particle_filter import DifferentiableParticleFilter
@@ -21,9 +22,10 @@ hparams = {
     'sampling_frequency': 50, 
     'batch_size': 1, 
 
-    'use_forces': True,
-    'use_images': False,
-    'model_path': "models/saved_models/final/20230806_DPF_PretrainedForwardModel_ForceObservations.pth",
+    'use_images_for_forward_model': True,
+    'use_forces_for_observation_model': True,
+    'use_images_for_observation_model': False,
+    'model_path': "models/saved_models/final_two/20230807_DPF_PretrainedForwardModelImages_ForceObservations.pth",
 
     'num_particles': 500, 
     'initial_covariance': torch.diag(torch.tensor([0.2, 0.2, 0.2])), 
@@ -35,6 +37,7 @@ hparams = {
     'record_animations': True
 }
 
+sns.set_theme()
 image_generator = ImageGenerator()
 
 def visualize_particles(particles, filter_estimate, gt_pose, previous_estimates=None, previous_gt_poses=None):
@@ -67,7 +70,8 @@ def visualize_particles(particles, filter_estimate, gt_pose, previous_estimates=
     ax.set_xlim([-0.1, 0.1])
     ax.set_ylim([-0.1, 0.1])
     ax.legend()
-    ax.grid()
+    # ax.grid()
+    plt.tight_layout()
     return fig, ax
 
 def visualize_weights(diff_particle_filter):
@@ -135,8 +139,8 @@ def main():
 
         # start the animation recording
         if hparams['record_animations']:
-            video_path = "experiments/animations/sequence" + str(batch) + ".avi"
-            video_writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'MJPG'), fps=1, frameSize=(640, 480))
+            video_path = "experiments/animations/sequence" + str(batch) + "_test.avi"
+            video_writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'MJPG'), fps=5, frameSize=(640, 480))
 
             fig, _ = visualize_particles(
                 unnormalize_min_max(dpf.particles, min=test_min[:,9:12].unsqueeze(dim=0), max=test_max[:,9:12].unsqueeze(dim=0)), 
@@ -154,16 +158,24 @@ def main():
             current_image = image_generator.generate_image(
             	unnormalize_min_max(input_states[:,n,:].squeeze(), test_min[:,0:3].squeeze(), test_max[:,0:3].squeeze())
             )
+            # if batch==0:
+            #     cv2.imshow("Current image", cv2.merge([current_image, current_image, current_image]))
+            #     cv2.waitKey(100)
             current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32) / 255.0
 
             #  filter estimate for the current time step depending on the used observation model
-            if hparams['use_forces'] and not hparams['use_images']:
+            if not hparams['use_images_for_forward_model'] and \
+                   hparams['use_forces_for_observation_model'] and \
+               not hparams['use_images_for_observation_model']:
                 estimate = dpf.step(current_control_inputs, measurement=current_measurements)
 
-            if not hparams['use_forces'] and hparams['use_images']:
+            if not hparams['use_images_for_forward_model'] and \
+               not hparams['use_forces_for_observation_model'] and \
+                   hparams['use_images_for_observation_model']:
                 estimate = dpf.step(current_control_inputs, image=current_image)
 
-            if hparams['use_forces'] and hparams['use_images']: 
+            if hparams['use_images_for_forward_model'] or \
+              (hparams['use_forces_for_observation_model'] and hparams['use_images_for_observation_model']): 
                 estimate = dpf.step(current_control_inputs, measurement=current_measurements, image=current_image)
             
             dpf_estimates[n,:] = estimate
@@ -194,7 +206,7 @@ def main():
 
         # 3.3 visualize the estimated state against the ground truth
         gs = gridspec.GridSpec(2, 3, height_ratios=[1, 1])
-        fig = plt.figure(num=batch)
+        fig = plt.figure(num=batch, figsize=(8, 6), dpi=80)
         plt.suptitle("Test Sequence "+str(batch+1))
         ax1 = plt.subplot(gs[0,:])
         ax2 = plt.subplot(gs[1,0])
@@ -208,29 +220,32 @@ def main():
         ax1.set_xlabel('x (m)')
         ax1.set_ylabel('y (m)')
         ax1.legend()
-        ax1.grid()
+        # ax1.grid()
 
         ax2.plot(range(sequence_length), target_states[:,0:sequence_length,0].squeeze())
         ax2.plot(range(sequence_length), dpf_estimates[0:sequence_length,0])
         ax2.set_title("X-Position")
         ax2.set_xlabel('Steps')
         ax2.set_ylabel('x_pos (m)')
-        ax2.grid()
+        # ax2.grid()
 
         ax3.plot(range(sequence_length), target_states[:,0:sequence_length,1].squeeze())
         ax3.plot(range(sequence_length), dpf_estimates[0:sequence_length,1])
         ax3.set_title("Y-Position")
         ax3.set_xlabel('Steps')
         ax3.set_ylabel('y_pos (m)')
-        ax3.grid()
+        # ax3.grid()
 
         ax4.plot(range(sequence_length), target_states[:,0:sequence_length,2].squeeze())
         ax4.plot(range(sequence_length), dpf_estimates[0:sequence_length,2])
         ax4.set_title("Orientation")
         ax4.set_xlabel('Steps')
         ax4.set_ylabel('theta (rad)')
-        ax4.grid()
+        # ax4.grid()
 
+        gs.tight_layout(fig)
+
+        plt.savefig("experiments/figures/sequence"+str(batch)+".png", format='png')
         plt.show()
 
     print("Done.")

@@ -91,7 +91,7 @@ class ObservationModelImages(nn.Module):
             nn.BatchNorm2d(num_features=1),
             nn.ReLU(),
 
-            # (3. 3. 1)
+            # (3. 3. 8)
         )
 
         self.small_mlp = nn.Sequential(
@@ -170,19 +170,19 @@ class ObservationModelForcesAndImages(nn.Module):
             nn.ReLU(),
 
             # (7, 7, 8)
-            nn.Conv2d(in_channels=8, out_channels=1, kernel_size=3, stride=2),
-            nn.BatchNorm2d(num_features=1),
+            nn.Conv2d(in_channels=8, out_channels=8, kernel_size=3, stride=2),
+            nn.BatchNorm2d(num_features=8),
             nn.ReLU(),
 
             # (3. 3. 1)
         )
 
         self.small_mlp = nn.Sequential(
-            nn.Linear(9+3+4, 18), # 9 for the encoded image, 3 for the force measurements and 4 for the continuous representation of the particles states
+            nn.Linear(3*3*8+3+4, 36), # 9 for the encoded image, 3 for the force measurements and 4 for the continuous representation of the particles states
             nn.ReLU(),
-            nn.Linear(18, 18), 
+            nn.Linear(36, 36), 
             nn.ReLU(),
-            nn.Linear(18, 18),
+            nn.Linear(36, 18),
             nn.ReLU(),
             nn.Linear(18, 1), 
             last_layer

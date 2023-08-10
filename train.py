@@ -23,10 +23,10 @@ hparams = {
     'sampling_frequency': 50, 
     'batch_size': 1, 
 
-    'use_images_for_forward_model': False, 
+    'use_images_for_forward_model': True, 
 
     'use_forces_for_observation_model': True, 
-    'use_images_for_observation_model': True,
+    'use_images_for_observation_model': False,
 
     'num_particles': 100, 
     'initial_covariance': torch.diag(torch.tensor([0.2, 0.2, 0.2])),
@@ -35,17 +35,17 @@ hparams = {
     'resampling_soft_alpha': 0.05,
 
     'lr_decay_rate': 0.9,
-    'early_stopping_epochs': 20,
+    'early_stopping_epochs': 10,
 
     'pretrain_forward_model': False,
     'use_pretrained_forward_model': True,
 
     'save_model': True,
-    'model_name': "20230807_DPF_PretrainedForwardModel_ForceAndImageObservations.pth",
+    'model_name': "20230809_DPF_PretrainedForwardModel_ImageProposal.pth",
 
-    'pretrain_epochs': [20, 20, 20, 40, 50], # will only be used if 'pretrain_forward_model' is set to True
-    'epochs': [50, 50, 50, 50, 50],
-    'learning_rate': 1e-2,
+    'pretrain_epochs': [10, 10, 10, 10, 10], # will only be used if 'pretrain_forward_model' is set to True
+    'epochs': [50, 50, 50, 50, 50, 50],
+    'learning_rate': 1e-5,
 
     'sequence_lengths': [1, 2, 4, 8, 16]
 }
@@ -228,6 +228,7 @@ def train_end_to_end_single_epoch(dataloader, model, loss_fn, optimizer, sequenc
             loss += loss_fn(estimate, current_gt_state)
 
             # backpropagate the loss at the end of a sequence
+            # nothing_happening_anymore = (t > 20 and torch.norm(target_states[:,t+1,:] - target_states[:,t,:], p=2) < 1e-4)
             if (t % sequence_length == sequence_length - 1) or (t == input_states.shape[1]-1):
                 loss.backward()
                 optimizer.step()
@@ -402,13 +403,13 @@ def main():
         best_forward_model, train_losses, validation_losses = pretrain_forward_model(train_dataloader,validation_dataloader, dpf.forward_model, loss_fn, optimizer)
 
         dpf.forward_model = best_forward_model
-        # torch.save(best_forward_model, 'experiments/20230807_SimpleForwardModel_UpTo16Steps.pth') 
+        # torch.save(best_forward_model, 'experiments/20230809_SimpleForwardModel_UpTo32Steps.pth') 
 
         fig_pretrain, _ = plot_losses(train_losses, validation_losses, "Losses pretraining")
         plt.show()
 
     if hparams['use_pretrained_forward_model']: 
-        dpf.forward_model = torch.load('models/saved_models/final_two/20230807_SimpleForwardModel_UpTo16Steps.pth')
+        dpf.forward_model = torch.load('models/saved_models/final/20230807_ForwardModelImages_UpTo16Steps.pth')
         dpf.forward_model.requires_grad_(False) # freeze weights of the forward model if it has been pretrained
 
     # train end-to-end

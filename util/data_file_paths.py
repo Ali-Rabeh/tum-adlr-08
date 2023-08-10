@@ -72,10 +72,10 @@ test_path_list = [
     os.path.abspath("../pushdata/plywood/rect1/motion_surface=plywood_shape=rect1_a=0_v=100_i=0.000_s=1.000_t=1.047.json"),  
 
     os.path.abspath("../pushdata/plywood/rect1/motion_surface=plywood_shape=rect1_a=0_v=100_i=1.000_s=0.200_t=-0.349.json"), 
-    os.path.abspath("../pushdata/plywood/rect1/motion_surface=plywood_shape=rect1_a=0_v=100_i=1.000_s=0.800_t=-1.396.json"), 
+    # os.path.abspath("../pushdata/plywood/rect1/motion_surface=plywood_shape=rect1_a=0_v=100_i=1.000_s=0.800_t=-1.396.json"), 
     os.path.abspath("../pushdata/plywood/rect1/motion_surface=plywood_shape=rect1_a=0_v=100_i=1.000_s=1.000_t=0.698.json"),
 
-    os.path.abspath("../pushdata/plywood/rect1/motion_surface=plywood_shape=rect1_a=0_v=100_i=2.000_s=0.100_t=0.698.json"), 
+    # os.path.abspath("../pushdata/plywood/rect1/motion_surface=plywood_shape=rect1_a=0_v=100_i=2.000_s=0.100_t=0.698.json"), 
     os.path.abspath("../pushdata/plywood/rect1/motion_surface=plywood_shape=rect1_a=0_v=100_i=2.000_s=0.300_t=-1.047.json"), 
     os.path.abspath("../pushdata/plywood/rect1/motion_surface=plywood_shape=rect1_a=0_v=100_i=2.000_s=1.000_t=0.349.json"),   
 
@@ -87,8 +87,8 @@ test_path_list = [
 test_mean = torch.tensor([[ 1.4125e-04, -9.9369e-05, -5.8108e-04, -3.9843e-06,  3.3249e-06, 1.2629e-05, -6.2884e-03,  6.1137e-03, -5.5610e-06,  1.4126e-04, -9.9368e-05, -5.8114e-04]])
 test_std = torch.tensor([[1.7295e-04, 1.1925e-04, 2.2736e-03, 1.1160e-05, 7.8305e-06, 1.6352e-04, 1.7238e-02, 1.5586e-02, 2.7105e-05, 1.7295e-04, 1.1926e-04, 2.2738e-03]])
 
-test_min = torch.tensor([[-3.0546e-02, -3.5163e-02, -6.0163e-01, -2.3260e-03, -2.2722e-03,
+test_min = torch.tensor([[-3.0546e-02, -3.5163e-02, -6.0163e-01, -2.3260e-03, -1.4932e-03,
          -1.7453e-04, -4.7100e+00, -3.1850e+00, -7.2725e-03, -3.0546e-02,
          -3.5163e-02, -6.0163e-01]])
-test_max = torch.tensor([[4.0568e-02, 1.9610e-02, 4.8599e-01, 1.7130e-03, 2.3992e-03, 2.0944e-04,
+test_max = torch.tensor([[4.0568e-02, 1.9610e-02, 4.8599e-01, 1.1910e-03, 2.3992e-03, 2.0944e-04,
          3.3518e+00, 6.1078e+00, 7.3675e-03, 4.0568e-02, 1.9610e-02, 4.8599e-01]])

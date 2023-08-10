@@ -133,7 +133,8 @@ class DifferentiableParticleFilter(nn.Module):
         indices = distribution.sample(sample_shape=(num_particles,))
 
         # draw corresponding particles
-        self.particles = self.particles[:, indices, :] + 0.05*torch.randn(size=self.particles.shape)
+        self.particles = self.particles[:, indices, :] + 0.01*torch.randn(size=self.particles.shape)
+        # self.particles = self.particles[:, indices, :]
         assert self.particles.shape == (batch_size, num_particles, state_dim) 
 
     def estimate(self): 

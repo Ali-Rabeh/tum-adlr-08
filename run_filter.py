@@ -22,23 +22,24 @@ hparams = {
     'sampling_frequency': 50, 
     'batch_size': 1, 
 
-    'use_images_for_forward_model': True,
+    'use_images_for_forward_model': False,
     'use_forces_for_observation_model': True,
-    'use_images_for_observation_model': False,
-    'model_path': "models/saved_models/final_two/20230807_DPF_PretrainedForwardModelImages_ForceObservations.pth",
+    'use_images_for_observation_model': True,
+    'model_path': "models/saved_models/20230809_DPF_PretrainedForwardModel_ForceAndImageObservations.pth",
 
-    'num_particles': 500, 
+    'num_particles': 1000, 
     'initial_covariance': torch.diag(torch.tensor([0.2, 0.2, 0.2])), 
 
     'use_log_probs': True,
     'use_resampling': True,
-    'resampling_soft_alpha': 0.05,
+    'resampling_soft_alpha': 0.01,
 
     'record_animations': True
 }
 
 sns.set_theme()
 image_generator = ImageGenerator()
+mse_loss = torch.nn.MSELoss()
 
 def visualize_particles(particles, filter_estimate, gt_pose, previous_estimates=None, previous_gt_poses=None):
     """ 
@@ -123,9 +124,10 @@ def main():
     print(dpf)
 
     # 3. for each sequence in the test dataset do: 
+    rmse_sequences_states = torch.zeros(size=(len(test_dataloader), 3))
+    rmse_sequences_position = torch.zeros(size=(len(test_dataloader), 1))
     for batch, (input_states, control_inputs, observations, target_states) in enumerate(test_dataloader):
         sequence_length = input_states.shape[1]
-        # sequence_length = 20
 
         dpf_estimates = torch.zeros(size=(sequence_length, 3))
 
@@ -135,12 +137,12 @@ def main():
 
         dpf.initialize(1, initial_state, hparams['initial_covariance'])
         dpf_estimates[0,:] = dpf.estimate()
-        print(f"Initial estimate: {dpf_estimates[0,:]}")
+        # print(f"Initial estimate: {dpf_estimates[0,:]}")
 
         # start the animation recording
         if hparams['record_animations']:
             video_path = "experiments/animations/sequence" + str(batch) + "_test.avi"
-            video_writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'MJPG'), fps=5, frameSize=(640, 480))
+            video_writer = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*'MJPG'), fps=2, frameSize=(640, 480))
 
             fig, _ = visualize_particles(
                 unnormalize_min_max(dpf.particles, min=test_min[:,9:12].unsqueeze(dim=0), max=test_max[:,9:12].unsqueeze(dim=0)), 
@@ -148,6 +150,7 @@ def main():
                 unnormalize_min_max(target_states[:,0,:].squeeze(), min=test_min[:,9:12].squeeze(), max=test_max[:,9:12].squeeze())
             )
             video_writer.write(convertFigureToImage(fig))
+            plt.close(fig)
 
         # 3.2 step the filter through the sequence
         for n in range(1, sequence_length):
@@ -158,9 +161,6 @@ def main():
             current_image = image_generator.generate_image(
             	unnormalize_min_max(input_states[:,n,:].squeeze(), test_min[:,0:3].squeeze(), test_max[:,0:3].squeeze())
             )
-            # if batch==0:
-            #     cv2.imshow("Current image", cv2.merge([current_image, current_image, current_image]))
-            #     cv2.waitKey(100)
             current_image = torch.tensor(current_image[None, None, :, :], dtype=torch.float32) / 255.0
 
             #  filter estimate for the current time step depending on the used observation model
@@ -179,7 +179,7 @@ def main():
                 estimate = dpf.step(current_control_inputs, measurement=current_measurements, image=current_image)
             
             dpf_estimates[n,:] = estimate
-            print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
+            # print(f"Step: {n} | Ground truth: {target_states[:,n,:]} | Filter estimate: {estimate}")
 
             if hparams['record_animations']:
                 fig, _ = visualize_particles(
@@ -190,6 +190,11 @@ def main():
                     previous_gt_poses=unnormalize_min_max(target_states[:,0:n,:].squeeze(), min=test_min[:,9:12].squeeze(), max=test_max[:,9:12].squeeze())
                 )
                 video_writer.write(convertFigureToImage(fig))
+                plt.close(fig)
+
+            if (n > 20) and torch.norm(target_states[:,n+1,:] - target_states[:,n,:], p=2) < 1e-4: 
+                sequence_length = n+1
+                break
 
         # destroy everything needed for the animations
         if hparams['record_animations']:
@@ -198,21 +203,27 @@ def main():
             plt.close('all')
 
         dpf_estimates = dpf_estimates.detach().numpy()
+        dpf_estimates = dpf_estimates[0:n+1,:]
+        target_states = target_states[:,0:n+1,:]
 
         # unnormalize for better plotting
         dpf_estimates = unnormalize_min_max(dpf_estimates, min=test_min[:,9:12], max=test_max[:,9:12])
         target_states = unnormalize_min_max(target_states, min=test_min[:,9:12], max=test_max[:,9:12])
-        print(f"Target States unnormalized: {target_states}")
+        # print(f"Target States unnormalized: {target_states}")
+
+        # calculate error metrics
+        target_states_squeezed = torch.squeeze(target_states)
+        rmse_sequences_states[batch,0] = torch.sqrt(mse_loss(dpf_estimates[:,0], target_states_squeezed[:,0]))
+        rmse_sequences_states[batch,1] = torch.sqrt(mse_loss(dpf_estimates[:,1], target_states_squeezed[:,1]))
+        rmse_sequences_states[batch,2] = torch.sqrt(mse_loss(dpf_estimates[:,2], target_states_squeezed[:,2]))
+        rmse_sequences_position[batch,0] = torch.sqrt(mse_loss(dpf_estimates[:,0:2], target_states_squeezed[:,0:2]))
 
         # 3.3 visualize the estimated state against the ground truth
         gs = gridspec.GridSpec(2, 3, height_ratios=[1, 1])
         fig = plt.figure(num=batch, figsize=(8, 6), dpi=80)
         plt.suptitle("Test Sequence "+str(batch+1))
-        ax1 = plt.subplot(gs[0,:])
-        ax2 = plt.subplot(gs[1,0])
-        ax3 = plt.subplot(gs[1,1])
-        ax4 = plt.subplot(gs[1,2])
 
+        ax1 = fig.add_subplot(gs[0,:])
         ax1.scatter(target_states[:,0:sequence_length,0], target_states[:,0:sequence_length,1], label="Ground Truth")
         ax1.scatter(dpf_estimates[0:sequence_length,0], dpf_estimates[0:sequence_length,1], marker='+', label='Filter Estimate')
         ax1.axis('equal')
@@ -222,6 +233,7 @@ def main():
         ax1.legend()
         # ax1.grid()
 
+        ax2 = fig.add_subplot(gs[1,0])
         ax2.plot(range(sequence_length), target_states[:,0:sequence_length,0].squeeze())
         ax2.plot(range(sequence_length), dpf_estimates[0:sequence_length,0])
         ax2.set_title("X-Position")
@@ -229,6 +241,7 @@ def main():
         ax2.set_ylabel('x_pos (m)')
         # ax2.grid()
 
+        ax3 = fig.add_subplot(gs[1,1])
         ax3.plot(range(sequence_length), target_states[:,0:sequence_length,1].squeeze())
         ax3.plot(range(sequence_length), dpf_estimates[0:sequence_length,1])
         ax3.set_title("Y-Position")
@@ -236,6 +249,7 @@ def main():
         ax3.set_ylabel('y_pos (m)')
         # ax3.grid()
 
+        ax4 = fig.add_subplot(gs[1,2])
         ax4.plot(range(sequence_length), target_states[:,0:sequence_length,2].squeeze())
         ax4.plot(range(sequence_length), dpf_estimates[0:sequence_length,2])
         ax4.set_title("Orientation")
@@ -246,9 +260,13 @@ def main():
         gs.tight_layout(fig)
 
         plt.savefig("experiments/figures/sequence"+str(batch)+".png", format='png')
-        plt.show()
+        # plt.show()
 
     print("Done.")
+    print(f"RMSE component-wise: {rmse_sequences_states}")
+    print(f"RMSE component-wise whole test set: {torch.sqrt(torch.mean(rmse_sequences_states**2, dim=0))}")
+    print(f"RMSE position-wise: {rmse_sequences_position}")
+    print(f"RMSE position-wise whole test set: {torch.sqrt(torch.mean(rmse_sequences_position**2, dim=0))}")
 
 if __name__ == '__main__':
     main()

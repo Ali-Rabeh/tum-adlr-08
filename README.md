@@ -1,18 +1,38 @@
 # TUM-ADLR-08 - Multimodal Sensor Fusion in Differentiable Filters Using A Learned Proposal Distribution
-Repository for project of Advanced Deep Learning for Robotics (ID 08)
-
-## Milestones 
-The key steps for implementing the project:
-- Implement a differentiable filter for estimating the state of a pushed object.
-- Adapt the Differentiable Particle Proposal Filter from [here]() to a pushing scenario.
-- Fuse tactile, proprioceptive and visual measurements in the learned proposal distribution in a novel way such as in a single network.
+Welcome to the repository for our project in the SS23 iteration of the  Advanced Deep Learning for Robotics (ADLR) course at TUM! We explored methods for sensor fusion in differentiable particle filters to enhance nonlinear state etsimates in a pushing scenario. 
 
 ## Repository Overview
 | Directory/Script | Content |
 | ---------------- | ------- |
-| docs             | Contains all handed-in files during the project. |
-| experiments      | Contains scripts for training and evaluating differentiable filters with varying data? | 
-| models           | Contains our implementations of differentiable filters. |
+| data | Contains the dataset we used during our project as jsons. The data is a subset of the MIT Push dataset and you can find more information on this dataset [here](https://web.mit.edu/mcube//push-dataset/). |
+| doc | Contains all handed-in files during the project as well as some additional insightful figures. |
+| models | Contains our implementations of a differentiable particle filter and different forward and observation models to plug into the particle filter. Also contains saved versions of the already trained models we used for producing our final results. |
+| output | Contains figures and animations produced when running `run_filter.py`. | 
+| util | Contains helper functions and scripts used during the course of the project. Look inside for a more detailed overview. |
+| `camera_helpers.py` | Helper script to generate synthetic camera images from a current object state. |
+| `run_filter.py` | Script for evaluating an already trained filter. For more details on how to use it, see below. |
+| `train.py`| Script for training a differentiable particle filter. For more details on how to use it, see below. |
+
+## How to use the project 
+### I. Training
+The script `train.py` is used for training a differentiable particle filter. Training behavior can be controlled via the hyperparameter dictionary right at the start of the script. Once you have set the parameters to your liking, run
+
+`python3 train.py`
+
+from the main directory of the repository.
+
+### II. Inference/Testing
+An already trained filter can be evaluated on the testset with the `run_filter.py` script. The behavior can be again controlled by the hyperparameter dictionary at the start of the script. Once these are set, run 
+
+`python3 run_filter.py`
+
+from the main directory of the repository. This will put both figures and animations (if desired) into the [output/figures]() and [output/animations]() to visualize the chosen filter's behavior. 
+
+## Milestones 
+The key steps for implementing the project were:
+- :white_check_mark: Implement a differentiable filter for estimating the state of a pushed object.
+- :white_check_mark: Adapt the Differentiable Particle Proposal Filter from [here]() to a pushing scenario.
+- :white_check_mark: Fuse tactile, proprioceptive and visual measurements via both a learned proposal distribution and a combined observation model and evaluate their respective performances.
 
 ## Helpful Links
 ### Paper

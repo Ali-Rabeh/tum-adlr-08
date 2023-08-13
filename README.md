@@ -47,3 +47,4 @@ The key steps for implementing the project were:
 
 ### Data
 The MIT Push dataset can be downloaded from the MIT MCube Lab website [here](https://web.mit.edu/mcube//push-dataset/). Scripts for preprocessing and rendering that data can be found [here](https://github.com/mcubelab/pdproc). 
+Dataset used for training, testing and validation can be found under the data folder of this repository.

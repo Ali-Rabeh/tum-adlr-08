@@ -23,9 +23,9 @@ hparams = {
     'batch_size': 1, 
 
     'use_images_for_forward_model': False,
-    'use_forces_for_observation_model': True,
+    'use_forces_for_observation_model': False,
     'use_images_for_observation_model': True,
-    'model_path': "models/saved_models/20230809_DPF_PretrainedForwardModel_ForceAndImageObservations.pth",
+    'model_path': "models/saved_models/final/20230807_DPF_PretrainedForwardModel_ImageObservations.pth",
 
     'num_particles': 1000, 
     'initial_covariance': torch.diag(torch.tensor([0.2, 0.2, 0.2])), 
@@ -259,8 +259,8 @@ def main():
 
         gs.tight_layout(fig)
 
-        plt.savefig("experiments/figures/sequence"+str(batch)+".png", format='png')
-        # plt.show()
+        # plt.savefig("experiments/figures/sequence"+str(batch)+".png", format='png')
+        plt.show()
 
     print("Done.")
     print(f"RMSE component-wise: {rmse_sequences_states}")

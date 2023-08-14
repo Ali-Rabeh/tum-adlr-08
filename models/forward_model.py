@@ -27,10 +27,14 @@ class ForwardModel(nn.Module):
         """ Returns delta_x, that is, a prediction for the small increment from last time step to the next: x_{t+1} = x_{t} + delta_x 
         
         Args: 
-            particle_states (torch.tensor): dimensions = (batch_size, num_particles, state_dim), given as continuous representation
-            control_inputs (torch.tensor): dimensions = (batch_size, control_dim), given as continuous representation
-        """
+            particle_states (torch.tensor): dimensions = (batch_size, num_particles, state_dim), given as continuous representation. 
+            control_inputs (torch.tensor): dimensions = (batch_size, control_dim), given as continuous representation. 
 
+        Returns: 
+            predicted_particle_states_diff (torch.tensor): A (batch_size x 1 x 3) tensor representing the predicted increment 
+                                                           from the current time step towards the next one.        
+
+        """
         # get the relevant dimensions
         num_input_points = particle_states.shape[0]
         num_particles = particle_states.shape[1]
@@ -121,7 +125,16 @@ class ForwardModelImages(nn.Module):
         )
 
     def forward(self, particle_states, control_input, image):  
-        """
+        """ Calculates a prediction for the small increment from last time step to the next: x_{t+1} = x_{t} + delta_x 
+        
+        Args: 
+            particle_states (torch.tensor): dimensions = (batch_size, num_particles, state_dim), given as continuous representation. 
+            control_inputs (torch.tensor): dimensions = (batch_size, control_dim), given as continuous representation. 
+            image (torch.tensor): Binary image depicting the current state. 
+
+        Returns: 
+            predicted_particle_states_diff (torch.tensor): A (batch_size x 1 x 3) tensor representing the predicted increment 
+                                                           from the current time step towards the next one.
 
         """
         # get the relevant dimensions

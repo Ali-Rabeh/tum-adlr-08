@@ -1,7 +1,3 @@
-"""
-
-"""
-
 import torch
 import numpy as np
 
@@ -42,12 +38,12 @@ def continuousToRadian(states):
     """ Maps states [x, y, cos(theta_rad), sin(theta_rad) to states [x, y, theta_rad]. 
     
     Args: 
-        states (torch.tensor):
+        states (torch.tensor): A (num_entries x 4) tensor containing states in continuous representation. 
 
     Returns:
-        discontinuous_states (torch.tensor):
-    """
+        discontinuous_states (torch.tensor): A (num_entries x 3) tensor containing states in "regular" representation. 
 
+    """
     discontinuous_states = torch.zeros(size=(states.shape[0], states.shape[1], states.shape[2]-1))
     discontinuous_states[:,:,0:2] = states[:,:,0:2]
     discontinuous_states[:,:,2] = torch.atan2(states[:,:,3], states[:,:,2])
@@ -62,10 +58,12 @@ def weightedAngularMean(angles_rad, weights):
 
     Args: 
         angles_rad (torch.tensor): Angles to compute the mean over, in radians.
-        weights (torch.tensor): 
+        weights (torch.tensor): Weights to set the influence of each angle for the estimate. 
+                                Typically this will be the particle filter weights. 
 
     Returns: 
-        angular_mean (torch.tensor):
+        angular_mean (torch.tensor): Consistent weighted mean of the input angles.  
+
     """
     weighted_sum_cos = torch.matmul(weights, torch.cos(angles_rad))
     weighted_sum_sin = torch.matmul(weights, torch.sin(angles_rad))

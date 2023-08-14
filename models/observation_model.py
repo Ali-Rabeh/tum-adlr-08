@@ -4,7 +4,10 @@ import numpy as np
 
 class ObservationModelForces(nn.Module):
     def __init__(self, use_log_probs):
-        """This will output weights for the particles.
+        """ This will output weights for the particles.
+
+        Args: 
+            use_log_probs (bool): Whether to represent probabilities (including particle weights) in log-space.
         
         """
         super().__init__()
@@ -26,12 +29,16 @@ class ObservationModelForces(nn.Module):
         )
 
     def forward(self, particle_states, measurement):
-        """Calculates the likelihoods of current measurements given the particle states. 
+        """C alculates the likelihoods of current measurements given the particle states. 
 
         Args: 
             particle_states (torch.tensor): A tensor with size (batch_size, num_particles, 4) representing the particle states 
                                             in the continuous representation.
             measurements (torch.tensor): The current measured forces/torques.
+
+        Returns: 
+            likelihoods (torch.tensor): Predicted likelihoods of the measurement given each particle state. 
+
         """
         num_input_points = measurement.shape[0]
         num_particles = particle_states.shape[1]
@@ -55,6 +62,9 @@ class ObservationModelForces(nn.Module):
 class ObservationModelImages(nn.Module):
     def __init__(self, use_log_probs):
         """This will output weights for the particles.
+
+        Args: 
+            use_log_probs (bool): Whether to represent probabilities (including particle weights) in log-space.
         
         """
         super().__init__()
@@ -111,9 +121,12 @@ class ObservationModelImages(nn.Module):
         Args: 
             particle_states (torch.tensor): A tensor with size (batch_size, num_particles, 4) representing the particle states 
                                             in the continuous representation.
-            image (torch.tensor):
-        """
+            image (torch.tensor): Binary image depicting the current state. 
 
+        Returns: 
+            likelihoods (torch.tensor): Predicted likelihoods of the measurement given each particle state. 
+
+        """
         num_particles = particle_states.shape[1]
         state_dim = particle_states.shape[2]
 
@@ -138,6 +151,9 @@ class ObservationModelImages(nn.Module):
 class ObservationModelForcesAndImages(nn.Module):
     def __init__(self, use_log_probs):
         """This will output weights for the particles.
+
+        Args: 
+            use_log_probs (bool): Whether to represent probabilities (including particle weights) in log-space.
         
         """
         super().__init__()
@@ -194,9 +210,13 @@ class ObservationModelForcesAndImages(nn.Module):
         Args: 
             particle_states (torch.tensor): A tensor with size (batch_size, num_particles, 4) representing the particle states 
                                             in the continuous representation.
-            image (torch.tensor):
-        """
+            measurement (torch.tensor): Current measured forces/torques.
+            image (torch.tensor): Binary image depicting the current state.
 
+        Returns: 
+            likelihoods (torch.tensor): Predicted likelihoods of the measurement given each particle state. 
+
+        """
         num_particles = particle_states.shape[1]
         state_dim = particle_states.shape[2]
         measurement_dim = measurement.shape[1]

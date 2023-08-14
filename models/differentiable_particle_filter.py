@@ -5,7 +5,10 @@ import numpy as np
 from util.manifold_helpers import boxplus, radianToContinuous, continuousToRadian, weightedAngularMean
 
 def init_weights(module):
-    """ 
+    """ Performs a Kaiming initialization on module's weights. 
+
+    Args: 
+        module (torch.nn): Network part to perform the initialization on. 
     
     """
     if isinstance(module, (nn.Linear)):
@@ -31,6 +34,11 @@ class DifferentiableParticleFilter(nn.Module):
     def initialize(self, batch_size, initial_states, initial_covariance):
         """ Initializes the particle filter.
 
+        Args: 
+            batch_size (int): Batch size you want to initialize with. 
+            initial_states (torch.tensor): A (batch_size x 3) tensor containing the initial states the particles are set to. 
+            initial_covariance (torch.tensor): A (3 x 3) tensor containing the covariance associated with the initial_states. 
+
         """
         self.particles = torch.zeros(size=(batch_size, self.hparams["num_particles"], 3))
         self.weights = torch.zeros(size=(batch_size, self.hparams["num_particles"], 1))
@@ -49,14 +57,14 @@ class DifferentiableParticleFilter(nn.Module):
         """ Gets a differential update step for the states from the forward model and adds it to the particle states. 
 
         Args: 
-            states (torch.tensor): 
-            control_inputs (torch.tensor): 
-            image (torch.tensor):
+            states (torch.tensor): Current particle states.
+            control_inputs (torch.tensor): Current control inputs, that is, the delta of pusher poses between two steps. 
+            image (torch.tensor): Binary image depicting the current state.
 
         Returns: 
             self.particles (torch.tensor): Particles moved by one step according to the forward model.
-        """
 
+        """
         states = radianToContinuous(states)
         control_inputs = radianToContinuous(control_inputs)
 
@@ -79,11 +87,11 @@ class DifferentiableParticleFilter(nn.Module):
             The weights are then updated with these likelihoods.
 
         Args: 
-            states (torch.tensor): 
-            measurement (torch.tensor):
-            image (torch.tensor): 
-        """
+            states (torch.tensor): Current particle states.
+            measurement (torch.tensor): Current measurement, that is, the current force readings. 
+            image (torch.tensor): Binary image depicting the current state.
 
+        """
         states = radianToContinuous(states)
 
         if ((measurement is not None) and (image is None)) or self.hparams['use_images_for_forward_model']: # use only force measurements in the observation_model
@@ -106,7 +114,9 @@ class DifferentiableParticleFilter(nn.Module):
         """ Resample particles, currently only works for weights in log-space. 
 
         Args: 
-            soft_resample_alpha (float):
+            soft_resample_alpha (float): Trade-off parameter, which sets how much the weight distribution is traded-off with a uniform distribution. 
+                                         The value has to be in the range [0, 1]. A value of 0 means regular resampling as in standard PFs, while 1 means
+                                         that the weights at each step will be uniform.  
         
         """
         soft_resample_alpha = torch.tensor(soft_resample_alpha, dtype=torch.float32)
@@ -164,9 +174,9 @@ class DifferentiableParticleFilter(nn.Module):
             measurement (torch.tensor): The current measurements, to weight the propagated particles. 
 
         Returns: 
-            estimate (torch.tensor): 
-        """
+            estimate (torch.tensor): Current filter estimate, calculated as a weighted mean of the particles. 
 
+        """
         # propagate particles forward
         if self.hparams['use_images_for_forward_model']: 
             _ = self.forward(self.particles, control_input, image=image)

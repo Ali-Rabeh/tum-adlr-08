@@ -15,7 +15,14 @@ class ImageGenerator:
         self.fov_y_deg = fov_y_deg  
 
     def get_corner_positions(self, se2_pose_center):
-        """
+        """ Calculates the corner positions of the object we push given the pose of its center. 
+            This assumes the object has a square top surface with known dimensions.
+
+        Args: 
+            se2_pose_center (torch.tensor): A (1 x 3) tensor representing the pose of the object's center. 
+
+        Returns: 
+            corner_positions (torch.tensor): A (4 x 2) tensor holding the positions of the object's corners.
 
         """
         object_diameter = np.sqrt(self.object_size[0]**2+self.object_size[1]**2)
@@ -36,7 +43,13 @@ class ImageGenerator:
         return torch.cat((pos_upper_right, pos_upper_left, pos_lower_left, pos_lower_right), dim=0)
 
     def cartesian_to_pixel_coordinates(self, points): 
-        """
+        """ Transforms a collection of 2d points in cartesian space into pixel parameters given some camera parameters and camera position.  
+
+        Args: 
+            points: A (num_points x 2) tensor containing the points you want to transform into pixel coordinates.
+
+        Returns: 
+            pixel_coordinates (torch.tensor): A (num_points x 2) tensor containing the pixel coordinates corresponding to the points. 
 
         """
         # print(f"Corner positions: {points}")
@@ -60,7 +73,14 @@ class ImageGenerator:
         return np.concatenate((pixel_coords_col, pixel_coords_row), axis=1)
 
     def generate_image(self, se2_pose_center):
-        """
+        """ Generates a 128 x 128 binary image of the object's current state. 
+            This assumes we know the camera parameters, camera position and object dimensions. 
+
+        Args: 
+            se2_pose_center (torch.tensor): A (1 x 3) tensor representing the pose of the object's center. 
+
+        Returns: 
+            image (np.array): A binary image of the current state of the object in a format compatible with OpenCV. 
 
         """
         corner_points = self.get_corner_positions(se2_pose_center) 

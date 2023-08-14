@@ -42,7 +42,19 @@ image_generator = ImageGenerator()
 mse_loss = torch.nn.MSELoss()
 
 def visualize_particles(particles, filter_estimate, gt_pose, previous_estimates=None, previous_gt_poses=None):
-    """ 
+    """ Scatters the current particles along with the resulting filter estimate and the current ground truth. 
+        If desired also scatters the preceding estimates and ground truth poses. 
+
+    Args: 
+        particles (torch.tensor): A tensor of size (batch_size x num_particles x 3) holding the poses of the current particles. 
+        filter_estimate (torch.tensor): A tensor of size (1 x 3) representing the current filter estimate. 
+        gt_pose (toch.tensor): A tensor of size (1 x 3) representing the current ground truth pose. 
+        previous_estimates (torch.tensor): A tensor of size (previous_timesteps x 3) representing the previous filter estimates. 
+        previous_gt_poses (torch.tensor): A tensor of size (previous_timesteps x 3) representing the previous ground truth poses. 
+
+    Returns; 
+        fig (plt.figure): Handle to the current matplotlib figure used for drawing
+        ax (plt.axis): Handle to the current matplot axis used for drawing
     
     """
     if previous_gt_poses is not None: 
@@ -76,6 +88,16 @@ def visualize_particles(particles, filter_estimate, gt_pose, previous_estimates=
     return fig, ax
 
 def visualize_weights(diff_particle_filter):
+    """ Plots a histogram of the current particle weight distribution. 
+
+    Args: 
+        diff_particle_filter (DifferentiableParticleFilter): The filter whose weights are to be plotted. 
+
+    Returns: 
+        fig (plt.figure): Handle to the current matplotlib figure used for drawing. 
+        ax (plt.axis): Handle to the current matplot axis used for drawing.         
+
+    """
     fig, ax = plt.subplots(1, 1)
     weights = diff_particle_filter.weights
     weights = weights.squeeze().detach().numpy()
@@ -87,7 +109,11 @@ def visualize_weights(diff_particle_filter):
 def convertFigureToImage(fig):
     """ Converts a plt.figure object to a cv2 image. Used for the animations.
     
-    fig (plt.figure):
+    Args: 
+        fig (plt.figure):  Handle to the figure that is to be converted. 
+
+    Returns: 
+        image (np.array): The converted figure in a format usable by opencv. 
 
     """
     fig.canvas.draw()
@@ -96,13 +122,33 @@ def convertFigureToImage(fig):
     return image
 
 def unnormalize_min_max(x, min, max): 
-    """ Unnormalizes x, which is assumed to be a tensor. """
+    """ Reverses the normalization of x. 
+    
+    Args: 
+        x (torch.tensor): Tensor that is to be unnormalized. 
+        min (torch.tensor): Minimum of x before it was normalized, has to be the same shape as x. 
+        max (torch.tensor): Maximum of x before it was normalized, has to be the same shape as x. 
+
+    Returns: 
+        out (torch.tensor): Unnormalized version of x. 
+
+    """
     out = (max-min) * x + min
     assert out.shape == x.shape
     return out
 
 def unnormalize_mean_std(x, mean, std):
-    """ Unnormalizes x, which is assumed to be a tensor. """
+    """ Reverses the standardization of x. 
+    
+    Args: 
+        x (torch.tensor): Tensor whose standardization you want to reverse. 
+        mean (torch.tensor): Mean of x before it was standardized, has to be the same shape as x. 
+        std (torch.tensor): Standard deviation of x before it was standardized, has to be the same shape as x.
+
+    Returns; 
+        out (torch.tensor): Input x with the same mean and standard deviation as before the standardization. 
+
+    """
     out = std * x + mean 
     assert out.shape == x.shape
     return out

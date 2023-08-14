@@ -8,6 +8,18 @@ from dataset import NormalDataset, ShiftedDataset, assemble_datasets
 from data_file_paths import train_path_list, validation_path_list, test_path_list
 
 def plot_sequence_variables(sequence_data):
+    """ Plots every feature contained in a pushing sequence against the time. 
+
+    Args: 
+        sequence_data (pd.DataFrame): Dataframe for the pushing sequence.  
+
+    Returns: 
+        time_vector (torch.tensor): Contains the time (starting from 0) of each step in the sequence.  
+        fig (plt.figure): Handle to the current matplotlib figure used for drawing.
+        axes (plt.axes): Handle to the current matplot axis used for drawing. 
+
+    """
+
     time_vector = sequence_data.dataframe["time_sec"] - sequence_data.dataframe["time_sec"][0]
 
     fig, axes = plt.subplots(3, 3)
@@ -51,6 +63,17 @@ def plot_sequence_variables(sequence_data):
     return time_vector, fig, axes
 
 def plot_object_and_tip_pose(sequence_data):
+    """ Plots object pose and tip pose of a pushing sequence against the time to see if they are plausible. 
+
+    Args: 
+        sequence_data (pd.DataFrame): Dataframe for the pushing sequence.  
+
+    Returns: 
+        time_vector (torch.tensor): Contains the time (starting from 0) of each step in the sequence.  
+        fig (plt.figure): Handle to the current matplotlib figure used for drawing.
+        axes (plt.axes): Handle to the current matplot axis used for drawing. 
+
+    """
     time_vector = sequence_data.dataframe["time_sec"] - sequence_data.dataframe["time_sec"][0]
 
     fig, axes = plt.subplots(1, 2)

@@ -54,6 +54,21 @@ hparams = {
 image_generator = ImageGenerator()
 
 def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, sequence_length):
+    """ Trains the forward model for a single epoch. 
+
+    Args: 
+        dataloader (torch.utils.data.Dataloader): Dataloader object of the training dataset.  
+        model (models.forward_model.ForwardModel): Forward model of a differentiable particle filter to train.  
+        loss_fn (torch.nn loss function object): Loss function for the model that you want to train. 
+        optimizer (torch.optim object): Optimizer you want to train the model with.  
+        sequence_length (int): Length of steps for which you want to train. For example, if this set to 4, then the model will predict four steps 
+                               into the future after initialization before the loss is accumulated and a backpropagation is performed.
+
+    Returns: 
+        model (models.forward_model.ForwardModel): Trained model after the epoch. 
+        batch_losses (torch.tensor): Tensor containing the loss of each batch in this epoch. 
+
+    """
     size = len(dataloader.dataset)
     device = ("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -102,6 +117,19 @@ def pretrain_forward_model_single_epoch(dataloader, model, loss_fn, optimizer, s
     return model, torch.tensor(batch_losses)
 
 def validate_forward_model_single_epoch(dataloader, model, loss_fn, sequence_length):
+    """ Validates the forward model after a single epoch. 
+
+    Args: 
+        dataloader (torch.utils.data.Dataloader): Dataloader object of the validation dataset.  
+        model (models.forward_model.ForwardModel): Trained forward model of a differentiable particle filter to validate.  
+        loss_fn (torch.nn loss function object): Loss function for the model that you want to validate with. 
+        sequence_length (int): Length of steps for which you want to validate. For example, if this set to 4, then the model will predict four steps 
+                               into the future after initialization before the loss is accumulated.
+
+    Returns: 
+        test_loss (torch.tensor): Average validation loss per batch. 
+
+    """
     size = len(dataloader.dataset)
     num_batches = len(dataloader)
     device = ("cuda" if torch.cuda.is_available() else "cpu")
@@ -145,8 +173,16 @@ def pretrain_forward_model(train_dataloader, validation_dataloader, model, loss_
     """ Convenience function to handle both training and validation of the forward model pretraining.
 
     Args: 
+        train_dataloader (torch.utils.data.Dataloader): Dataloader constructed from the train dataset. 
+        validation_dataloader (torch.utils.data.Dataloader): Dataloader constructed from validation dataset. 
+        model (models.forward.ForwardModel): Forward model of a differentiable particle filter you want to train. 
+        loss_fn (torch.nn loss function object): Loss function you want to train with. 
+        optimizer (torch.optim object): Optimizer you want to train the model with. 
 
     Returns: 
+        best_model (model.forward.ForwardModel): Forward model that achieves the lowest validation loss across the specified epochs. 
+        train_losses (torch.tensor): Collection of train loss per epoch. 
+        validation_losses (torch.tensor): Collection validation loss per epoch. 
     
     """
     device = ("cuda" if torch.cuda.is_available() else "cpu")
@@ -183,7 +219,19 @@ def pretrain_forward_model(train_dataloader, validation_dataloader, model, loss_
     return best_model, train_losses, validation_losses
 
 def train_end_to_end_single_epoch(dataloader, model, loss_fn, optimizer, sequence_length): 
-    """
+    """ Trains the whole dpf model for a single epoch. 
+
+    Args: 
+        dataloader (torch.utils.data.Dataloader): Dataloader object constructed from the training dataset.  
+        model (models.differentiable_particle_filter): Differentiable particle filter to train.  
+        loss_fn (torch.nn loss function object): Loss function for the model that you want to train. 
+        optimizer (torch.optim object): Optimizer you want to train the model with.  
+        sequence_length (int): Length of steps for which you want to train. For example, if this set to 4, then the model will predict four steps 
+                               into the future after initialization before the loss is accumulated and a backpropagation is performed.
+
+    Returns: 
+        model (models.differentiable_particle_filter): Trained model after the epoch. 
+        batch_losses (torch.tensor): Tensor containing the loss of each batch in this epoch. 
 
     """
     device = ("cuda" if torch.cuda.is_available() else "cpu")
@@ -238,7 +286,17 @@ def train_end_to_end_single_epoch(dataloader, model, loss_fn, optimizer, sequenc
     return model, batch_losses
 
 def validate_end_to_end_single_epoch(dataloader, model, loss_fn, sequence_length):
-    """
+    """ Validates the whole dpf model after a single epoch. 
+
+    Args: 
+        dataloader (torch.utils.data.Dataloader): Dataloader object constructed from the validation dataset.  
+        model (models.differentiable_particle_filter): Trained model of a differentiable particle filter to validate.  
+        loss_fn (torch.nn loss function object): Loss function for the model that you want to validate with. 
+        sequence_length (int): Length of steps for which you want to validate. For example, if this set to 4, then the model will predict four steps 
+                               into the future after initialization before the loss is accumulated.
+
+    Returns: 
+        val_loss (torch.tensor): Average validation loss per batch. 
 
     """
     model.eval()
@@ -285,8 +343,20 @@ def validate_end_to_end_single_epoch(dataloader, model, loss_fn, sequence_length
     return val_loss
 
 def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, optimizer):
-    """
+    """ Convenience function to handle both training and validation of a dpf model.
 
+    Args: 
+        train_dataloader (torch.utils.data.Dataloader): Dataloader constructed from the train dataset. 
+        validation_dataloader (torch.utils.data.Dataloader): Dataloader constructed from validation dataset. 
+        model (models.forward.ForwardModel): Model of a differentiable particle filter you want to train. 
+        loss_fn (torch.nn loss function object): Loss function you want to train with. 
+        optimizer (torch.optim object): Optimizer you want to train the model with. 
+
+    Returns: 
+        best_model (model.differentiable_particle_filter): Forward model that achieves the lowest validation loss across the specified epochs. 
+        train_losses (torch.tensor): Collection of train loss per epoch. 
+        validation_losses (torch.tensor): Collection validation loss per epoch. 
+    
     """
     device = ("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
@@ -334,7 +404,16 @@ def train_end_to_end(train_dataloader, validation_dataloader, model, loss_fn, op
     return best_model, train_losses, validation_losses
 
 def plot_losses(train_losses, validation_losses, title): 
-    """
+    """ Plots train and validation loss across epochs. 
+
+    Args: 
+        train_losses (torch.tensor): Train losses you want to plot. Has to be the same size as validation_losses. 
+        validation_losses (torch.tensor): Val. losses you want to plot. Has to be the same size as train_losses. 
+        title (string): Title of the figure. 
+
+    Returns: 
+        fig (plt.figure): Handle to the current matplotlib figure used for drawing. 
+        ax (plt.axis): Handle to the current matplot axis used for drawing. 
 
     """
     fig, ax = plt.subplots(1, 1)

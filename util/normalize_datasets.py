@@ -17,8 +17,16 @@ hparams = {
 }
 
 def calculate_mean_and_std(dataloader):
-    """ Approximately calculates the mean and standard deviation of a dataset. """
+    """ Approximately calculates the mean and standard deviation of a dataset. 
+    
+    Args:
+        dataloader (torch.utils.data.Dataloader): Dataloader constructed from one of the split sets. 
 
+    Returns: 
+        mean (torch.tensor): Mean of each feature (column) contained in the dataset. 
+        std (torch.tensor): Standard deviation of each feature (column) contained in the dataset. 
+
+    """
     mean = torch.zeros(size=(1,12))
     std = torch.zeros(size=(1,12))
     number_of_samples = 0.0
@@ -42,8 +50,15 @@ def calculate_mean_and_std(dataloader):
     return mean, std
 
 def calculate_min_max_of_dataset(dataloader):
-    """
+    """ Finds the minimum and maximum of a split dataset. 
     
+    Args:
+        dataloader (torch.utils.data.Dataloader): Dataloader constructed from one of the split sets. 
+
+    Returns: 
+        min_values (torch.tensor): Minimum of each feature (column) contained in the dataset. 
+        max_values (torch.tensor): Maximum of each feature (column) contained in the dataset. 
+
     """
     min_values = 10*torch.ones(size=(1,12))
     max_values = -10* torch.ones(size=(1,12))

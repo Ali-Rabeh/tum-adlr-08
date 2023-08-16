@@ -1,5 +1,5 @@
 # TUM-ADLR-08 - Multimodal Sensor Fusion in Differentiable Filters Using A Learned Proposal Distribution
-Welcome to the repository for our project in the SS23 iteration of the  Advanced Deep Learning for Robotics (ADLR) course at TUM! We explored methods for sensor fusion in differentiable particle filters to enhance nonlinear state etsimates in a pushing scenario. 
+Welcome to the repository for our project in the SS23 iteration of the Advanced Deep Learning for Robotics (ADLR) course at TUM! We were designated as group 8 and explored methods for sensor fusion in differentiable particle filters to enhance nonlinear state estimates in a real-world pushing scenario. 
 
 ## Repository Overview
 | Directory/Script | Content |
